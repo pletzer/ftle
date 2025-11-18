@@ -100,7 +100,7 @@ def test2():
     X, Y = np.meshgrid(x, y)
 
     # Compute FTLE
-    T = 10.0
+    T = 2.0
     nsteps = 10
     ftle = compute_ftle(X.reshape(-1), Y.reshape(-1), T, nsteps, u_fun, v_fun, dudx_fun, dudy_fun, dvdx_fun, dvdy_fun)
     ftle = ftle.reshape((ny, nx))
