@@ -2,8 +2,8 @@ import numpy as np
 import scipy
 
 """
-Compute the Finite-Time Lyapunov Exponent (FTLE) by integrating the 
-velocity Jacobian along trajectories.
+Compute the Finite-Time Lyapunov Exponent (FTLE) using finite differences
+to approximate the velocity gradient tensor.
 """
 
 def compute_ftle(x, y, T, nsteps, u_fun, v_fun, dudx_fun, dudy_fun, dvdx_fun, dvdy_fun, 
@@ -16,46 +16,57 @@ def compute_ftle(x, y, T, nsteps, u_fun, v_fun, dudx_fun, dudy_fun, dvdx_fun, dv
     dt = T / nsteps
     n = len(x)
 
-    def tendency(t, state):
+    def vel_fun(t, pos):
+        x, y = pos[:n], pos[n:]
+        u, v = u_fun(x, y), v_fun(x, y)
+        return np.concatenate([u, v])
 
-        # extract the state variables
-        x, y, f11, f12, f21, f22 = state[:n], state[n:2*n], state[2*n:3*n], state[3*n:4*n], state[4*n:5*n], state[5*n:]
-
-        xdot = u_fun(x, y)
-        ydot = v_fun(x, y)
-
-        dudx = dudx_fun(x, y)
-        dudy = dudy_fun(x, y)
-        dvdx = dvdx_fun(x, y)
-        dvdy = dvdy_fun(x, y)
-
-        f11dot = dudx*f11 + dudy*f21
-        f12dot = dudx*f12 + dudy*f22
-        f21dot = dvdx*f11 + dvdy*f21
-        f22dot = dvdx*f12 + dvdy*f22
-
-        return np.concatenate([xdot, ydot, f11dot, f12dot, f21dot, f22dot])
-
-    # integrate the trajectories and the velocity Jacobian
+    # integrate the trajectories
     t = 0.0
-    f11 = np.ones(n)
-    f12 = np.zeros(n)
-    f21 = np.zeros(n)
-    f22 = np.ones(n)
-    state = np.concatenate([x, y, f11, f12, f21, f22]) 
+    xy = np.concatenate([x, y]) # flat array of initial positions
     for _ in range(nsteps):
-        result = scipy.integrate.solve_ivp(tendency,
+        result = scipy.integrate.solve_ivp(vel_fun,
                             t_span=[t, t + dt],
-                            y0=state,
+                            y0=xy,
                             method=method,
                             atol=atol, rtol=rtol)
-        state = result.y[:, -1] # get last state
-   
+        xy = result.y[:, -1] # get last position
+    xf0, yf0 = xy[:n], xy[n:]
+
+    t = 0.0
+    xy = np.concatenate([x + h, y]) # flat array of initial positions
+    for _ in range(nsteps):
+        result = scipy.integrate.solve_ivp(vel_fun,
+                            t_span=[t, t + dt],
+                            y0=xy,
+                            method=method,
+                            atol=atol, rtol=rtol)
+        xy = result.y[:, -1] # get last position
+    xf1, yf1 = xy[:n], xy[n:]
+
+
+    t = 0.0
+    xy = np.concatenate([x, y + h]) # flat array of initial positions
+    for _ in range(nsteps):
+        result = scipy.integrate.solve_ivp(vel_fun,
+                            t_span=[t, t + dt],
+                            y0=xy,
+                            method=method,
+                            atol=atol, rtol=rtol)
+        xy = result.y[:, -1] # get last position
+    xf2, yf2 = xy[:n], xy[n:]
+
+    # compute the velocity gradient tensor
+    dxpdx = (xf1 - xf0) / h
+    dxpdy = (xf2 - xf0) / h
+    dypdx = (yf1 - yf0) / h
+    dypdy = (yf2 - yf0) / h
+    
     # compute the Cauchy-Green deformation tensor
-    C11 = f11**2 + f21**2
-    C12 = f11*f12 + f21*f22
+    C11 = dxpdx**2 + dypdx**2
+    C12 = dxpdx*dxpdy + dypdx*dypdy
     C21 = C12
-    C22 = f12**2 + f22**2
+    C22 = dxpdy**2 + dypdy**2
 
     # compute the largest eigenvalue of C
     trace = C11 + C22
@@ -97,7 +108,7 @@ def test2():
     T = 5.0
     nsteps = 10
     ftle = compute_ftle(X.reshape(-1), Y.reshape(-1), T, nsteps, u_fun, v_fun, dudx_fun, dudy_fun, dvdx_fun, dvdy_fun,
-                        h=0.01, atol=1e-8, rtol=1e-8, method='RK45')
+                        h=0.01, atol=1e-8, rtol=1e-8, method='LSODA')
     ftle = ftle.reshape((ny, nx))
 
     print(f'ftle min = {ftle.min()} max = {ftle.max()}')
