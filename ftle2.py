@@ -1,64 +1,6 @@
 import numpy as np
 import scipy
 
-import numpy as np
-
-def expm_trace_zero_elements(a, b, c):
-    """
-    Compute exp(A) for many 2x2 matrices A with zero trace.
-    A = [[a, b],
-         [c, -a]]
-    
-    Handles both elliptic (rotation-like) and hyperbolic cases.
-    
-    Returns:
-        r11, r12, r21, r22 : arrays of same shape as a
-    """
-    a = np.asarray(a)
-    b = np.asarray(b)
-    c = np.asarray(c)
-    
-    if not (a.shape == b.shape == c.shape):
-        raise ValueError("a, b, c must have the same shape")
-    
-    disc = a**2 + b*c  # discriminant
-    r11 = np.zeros_like(a, dtype=float)
-    r12 = np.zeros_like(a, dtype=float)
-    r21 = np.zeros_like(a, dtype=float)
-    r22 = np.zeros_like(a, dtype=float)
-    
-    # Elliptic case: disc > 0
-    mask_pos = disc > 0
-    gamma = np.sqrt(disc[mask_pos])
-    cos_g = np.cos(gamma)
-    sin_g_over_gamma = np.sin(gamma) / gamma
-    r11[mask_pos] = cos_g + sin_g_over_gamma * a[mask_pos]
-    r12[mask_pos] =         sin_g_over_gamma * b[mask_pos]
-    r21[mask_pos] =         sin_g_over_gamma * c[mask_pos]
-    r22[mask_pos] = cos_g - sin_g_over_gamma * a[mask_pos]
-    
-    # Hyperbolic case: disc < 0
-    mask_neg = disc < 0
-    beta = np.sqrt(-disc[mask_neg])
-    cosh_b = np.cosh(beta)
-    sinh_b_over_beta = np.sinh(beta) / beta
-    r11[mask_neg] = cosh_b + sinh_b_over_beta * a[mask_neg]
-    r12[mask_neg] =          sinh_b_over_beta * b[mask_neg]
-    r21[mask_neg] =          sinh_b_over_beta * c[mask_neg]
-    r22[mask_neg] = cosh_b - sinh_b_over_beta * a[mask_neg]
-    
-    # Zero case: disc == 0
-    mask_zero = disc == 0
-    r11[mask_zero] = 1 + a[mask_zero]
-    r12[mask_zero] =     b[mask_zero]
-    r21[mask_zero] =     c[mask_zero]
-    r22[mask_zero] = 1 - a[mask_zero]
-    
-    return r11, r12, r21, r22
-
-
-
-
 def expm_2x2_trace_free(a, b, c, d):
     """
     Compute the matrix exponential of a 2x2, trace-free matrix A using the closed-form formula.
@@ -106,29 +48,6 @@ def expm_2x2_trace_free(a, b, c, d):
         r22[mask_neg] = cos_gamma * 1 + (sin_gamma / gamma) * d[mask_neg]
 
     return r11, r12, r21, r22
-
-    
-    # # Compute invariants
-    # delta_sq = a*a + b*c #-a*d + b*c
-    # #print(f'delta_sq = {delta_sq}')
-    # if delta_sq.any() < 0:
-    #     RuntimeError(f'Some delta_sq are negative= {delta_sq}')
-
-    # # delta_sq > 0
-    # delta = np.sqrt(delta_sq)
-            
-    
-    # # Compute exponential
-    # cosh_delta = np.cosh(delta)
-    # sinh_delta = np.sinh(delta)
-
-    # r11 = cosh_delta * 1 + (sinh_delta / delta) * a
-    # r12 = cosh_delta * 0 + (sinh_delta / delta) * b
-    # r21 = cosh_delta * 0 + (sinh_delta / delta) * c
-    # r22 = cosh_delta * 1 + (sinh_delta / delta) * d
-    
-    # return r11, r12, r21, r22
-
 
 
 """
@@ -225,8 +144,8 @@ def test1():
     X, Y = np.meshgrid(x, y)
 
     # Compute FTLE
-    T = 2.0
-    nsteps = 2 # 10
+    T = 5.0
+    nsteps = 10
     res = compute_ftle(X.reshape(-1), Y.reshape(-1), T, nsteps, u_fun, v_fun, dudx_fun, dudy_fun, dvdx_fun, dvdy_fun)
     ftle = res['ftle']
     detF = res['detF']
@@ -263,7 +182,7 @@ def test2():
     ax2.set_title('det F - 1')
     fig.colorbar(im2, ax=ax2, label='det F - 1')
 
-    fig.suptitle('FTLE Field for Cateye Flow using exact velocity and finite difference grandients')
+    fig.suptitle('FTLE Field for Cateye Flow using exact velocity and area preserving F integration')
     plt.tight_layout()
     plt.show()
     ftle = ftle.reshape((ny, nx))
