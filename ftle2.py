@@ -63,27 +63,71 @@ def expm_2x2_trace_free(a, b, c, d):
     """
     Compute the matrix exponential of a 2x2, trace-free matrix A using the closed-form formula.
     """
-    
-    # Compute invariants
-    delta_sq = a*a + b*c #-a*d + b*c
-    #print(f'delta_sq = {delta_sq}')
-    if delta_sq.any() < 0:
-        RuntimeError(f'Some delta_sq are negative= {delta_sq}')
 
-    # delta_sq > 0
-    delta = np.sqrt(delta_sq)
+    # Initialize result arrays
+    r11 = np.zeros_like(a)
+    r12 = np.zeros_like(a)
+    r21 = np.zeros_like(a)
+    r22 = np.zeros_like(a)
+
+    delta_sq = -a*d + b*c # -det A
+
+    mask_pos = delta_sq > 0
+    mask_zero = delta_sq == 0
+    mask_neg = delta_sq < 0
+
+    # Hyperbolic case
+    if np.any(mask_pos):
+        delta = np.sqrt(delta_sq[mask_pos])
+        cosh_delta = np.cosh(delta)
+        sinh_delta = np.sinh(delta)
+
+        r11[mask_pos] = cosh_delta * 1 + (sinh_delta / delta) * a[mask_pos]
+        r12[mask_pos] = cosh_delta * 0 + (sinh_delta / delta) * b[mask_pos]
+        r21[mask_pos] = cosh_delta * 0 + (sinh_delta / delta) * c[mask_pos]
+        r22[mask_pos] = cosh_delta * 1 + (sinh_delta / delta) * d[mask_pos] 
+
+    # Zero case
+    if np.any(mask_zero):
+        r11[mask_zero] = 1 + a[mask_zero]
+        r12[mask_zero] =     b[mask_zero]
+        r21[mask_zero] =     c[mask_zero]
+        r22[mask_zero] = 1 + d[mask_zero]
+     
+    # Elliptic case
+    if np.any(mask_neg):
+        gamma = np.sqrt(-delta_sq[mask_neg])
+        cos_gamma = np.cos(gamma)
+        sin_gamma = np.sin(gamma)
+
+        r11[mask_neg] = cos_gamma * 1 + (sin_gamma / gamma) * a[mask_neg]
+        r12[mask_neg] = cos_gamma * 0 + (sin_gamma / gamma) * b[mask_neg]
+        r21[mask_neg] = cos_gamma * 0 + (sin_gamma / gamma) * c[mask_neg]
+        r22[mask_neg] = cos_gamma * 1 + (sin_gamma / gamma) * d[mask_neg]
+
+    return r11, r12, r21, r22
+
+    
+    # # Compute invariants
+    # delta_sq = a*a + b*c #-a*d + b*c
+    # #print(f'delta_sq = {delta_sq}')
+    # if delta_sq.any() < 0:
+    #     RuntimeError(f'Some delta_sq are negative= {delta_sq}')
+
+    # # delta_sq > 0
+    # delta = np.sqrt(delta_sq)
             
     
-    # Compute exponential
-    cosh_delta = np.cosh(delta)
-    sinh_delta = np.sinh(delta)
+    # # Compute exponential
+    # cosh_delta = np.cosh(delta)
+    # sinh_delta = np.sinh(delta)
 
-    r11 = cosh_delta * 1 + (sinh_delta / delta) * a
-    r12 = cosh_delta * 0 + (sinh_delta / delta) * b
-    r21 = cosh_delta * 0 + (sinh_delta / delta) * c
-    r22 = cosh_delta * 1 + (sinh_delta / delta) * d
+    # r11 = cosh_delta * 1 + (sinh_delta / delta) * a
+    # r12 = cosh_delta * 0 + (sinh_delta / delta) * b
+    # r21 = cosh_delta * 0 + (sinh_delta / delta) * c
+    # r22 = cosh_delta * 1 + (sinh_delta / delta) * d
     
-    return r11, r12, r21, r22
+    # return r11, r12, r21, r22
 
 
 
@@ -227,4 +271,4 @@ def test2():
 
 if __name__ == "__main__":
     test1()
-    #test2()
+    test2()
