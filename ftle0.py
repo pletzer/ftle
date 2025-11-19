@@ -7,7 +7,7 @@ velocity Jacobian along trajectories.
 """
 
 def compute_ftle(x, y, T, nsteps, u_fun, v_fun, dudx_fun, dudy_fun, dvdx_fun, dvdy_fun, 
-                 h=0.01, atol=1e-6, rtol=1e-6, method='LSODA'):
+                 atol=1e-6, rtol=1e-6, method='LSODA'):
     
 
     
@@ -69,8 +69,14 @@ def compute_ftle(x, y, T, nsteps, u_fun, v_fun, dudx_fun, dudy_fun, dvdx_fun, dv
     det = C11*C22 - C12*C21
     lambda1 = trace / 2 + np.sqrt((trace / 2)**2 - det)
 
-    # compute the FTLE
-    return np.log(lambda1) / (2 * np.abs(T))
+   # compute the FTLE
+    ftle = np.log(lambda1) / (2 * np.abs(T))
+
+    # det F
+    detF = f11 * f22 - f12 * f21
+
+    return {'ftle': ftle, 'detF': detF}
+
 
 def test1():
     # Example usage with cateye flow
@@ -84,9 +90,9 @@ def test1():
     # Compute FTLE
     T = 10.0
     nsteps = 10
-    ftle = compute_ftle(X.reshape(-1), Y.reshape(-1), T, nsteps, u_fun, v_fun, dudx_fun, dudy_fun, dvdx_fun, dvdy_fun)
+    res = compute_ftle(X.reshape(-1), Y.reshape(-1), T, nsteps, u_fun, v_fun, dudx_fun, dudy_fun, dvdx_fun, dvdy_fun)
 
-    print(f'X = {X} Y = {Y} ftle = {ftle}')
+    print(f'X = {X} Y = {Y} ftle = {res["ftle"]} detF = {res["detF"]}')
 
 def test2():
     # Example usage with cateye flow
@@ -103,16 +109,26 @@ def test2():
     # Compute FTLE
     T = 5.0
     nsteps = 10
-    ftle = compute_ftle(X.reshape(-1), Y.reshape(-1), T, nsteps, u_fun, v_fun, dudx_fun, dudy_fun, dvdx_fun, dvdy_fun,
-                        h=0.01, atol=1e-8, rtol=1e-8, method='RK45')
-    ftle = ftle.reshape((ny, nx))
+    res = compute_ftle(X.reshape(-1), Y.reshape(-1), T, nsteps, u_fun, v_fun, dudx_fun, dudy_fun, dvdx_fun, dvdy_fun,
+                        atol=1e-8, rtol=1e-8, method='RK45')
+    ftle = res['ftle'].reshape((ny, nx))
+    detF = res['detF'].reshape((ny, nx))
 
     print(f'ftle min = {ftle.min()} max = {ftle.max()}')
 
-    plt.pcolor(X, Y, ftle)
-    plt.colorbar(label='FTLE')
-    plt.title('FTLE Field for Cateye Flow using exact velocity and gradients')
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
+    im1 = ax1.pcolor(X, Y, ftle)
+    fig.colorbar(im1, ax=ax1, label='FTLE')
+    ax1.set_title('FTLE')
+
+    im2 = ax2.pcolor(X, Y, detF-1)
+    ax2.set_title('det F - 1')
+    fig.colorbar(im2, ax=ax2, label='det F - 1')
+
+    fig.suptitle('FTLE Field for Cateye Flow using exact velocity and gradients')
+    plt.tight_layout()
     plt.show()
 
 if __name__ == "__main__":
+    test1()
     test2()
