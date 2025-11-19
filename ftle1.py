@@ -3,14 +3,12 @@ import scipy
 
 """
 Compute the Finite-Time Lyapunov Exponent (FTLE) using finite differences
-to approximate the velocity gradient tensor.
+to approximate the velocity gradient tensor. This involves integrating only the
+trajectories and estimating the gradients via small perturbations.
 """
 
 def compute_ftle(x, y, T, nsteps, u_fun, v_fun, dudx_fun, dudy_fun, dvdx_fun, dvdy_fun, 
                  h=0.01, atol=1e-6, rtol=1e-6, method='LSODA'):
-    
-
-    
 
     # time step
     dt = T / nsteps
@@ -92,8 +90,8 @@ def test1():
     X, Y = np.meshgrid(x, y)
 
     # Compute FTLE
-    T = 10.0
-    nsteps = 10
+    T = 2.0 # 10.0
+    nsteps = 2 # 10
     res = compute_ftle(X.reshape(-1), Y.reshape(-1), T, nsteps, u_fun, v_fun, dudx_fun, dudy_fun, dvdx_fun, dvdy_fun)
     ftle = res['ftle']
     detF = res['detF']

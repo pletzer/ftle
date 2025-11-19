@@ -3,7 +3,7 @@ import scipy
 
 """
 Compute the Finite-Time Lyapunov Exponent (FTLE) by integrating the 
-velocity Jacobian along trajectories.
+velocity Jacobian along with the trajectories.
 """
 
 def compute_ftle(x, y, T, nsteps, u_fun, v_fun, dudx_fun, dudy_fun, dvdx_fun, dvdy_fun, 
@@ -88,8 +88,8 @@ def test1():
     X, Y = np.meshgrid(x, y)
 
     # Compute FTLE
-    T = 10.0
-    nsteps = 10
+    T = 2.0 # 10.0
+    nsteps = 2 # 10
     res = compute_ftle(X.reshape(-1), Y.reshape(-1), T, nsteps, u_fun, v_fun, dudx_fun, dudy_fun, dvdx_fun, dvdy_fun)
 
     print(f'X = {X} Y = {Y} ftle = {res["ftle"]} detF = {res["detF"]}')
@@ -110,7 +110,7 @@ def test2():
     T = 5.0
     nsteps = 10
     res = compute_ftle(X.reshape(-1), Y.reshape(-1), T, nsteps, u_fun, v_fun, dudx_fun, dudy_fun, dvdx_fun, dvdy_fun,
-                        atol=1e-8, rtol=1e-8, method='RK45')
+                        atol=1e-8, rtol=1e-8, method='RK45') # LSODA struggles here
     ftle = res['ftle'].reshape((ny, nx))
     detF = res['detF'].reshape((ny, nx))
 
