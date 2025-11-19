@@ -81,7 +81,7 @@ def test1():
     from cateye import u_fun, v_fun, dudx_fun, dudy_fun, dvdx_fun, dvdy_fun
 
     # Define grid
-    x = np.linspace(1.0, 1.0, 1)
+    x = np.linspace(1.01, 1.01, 1)
     y = np.linspace(0., 0., 1)
     X, Y = np.meshgrid(x, y)
 
@@ -115,8 +115,8 @@ def test2():
 
     plt.pcolor(X, Y, ftle)
     plt.colorbar(label='FTLE')
-    plt.title('FTLE Field for Cateye Flow using analytic velocity field')
+    plt.title('FTLE Field for Cateye Flow using exact velocity and finite difference')
     plt.show()
 
 if __name__ == "__main__":
-    test1()
+    test2()

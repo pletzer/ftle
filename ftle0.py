@@ -34,7 +34,9 @@ def compute_ftle(x, y, T, nsteps, u_fun, v_fun, dudx_fun, dudy_fun, dvdx_fun, dv
         f21dot = dvdx*f11 + dvdy*f21
         f22dot = dvdx*f12 + dvdy*f22
 
-        return np.concatenate([xdot, ydot, f11dot, f12dot, f21dot, f22dot])
+        res = np.concatenate([xdot, ydot, f11dot, f12dot, f21dot, f22dot])
+        #print(xdot, ydot, f11dot, f12dot, f21dot, f22dot)
+        return res
 
     # integrate the trajectories and the velocity Jacobian
     t = 0.0
@@ -50,6 +52,11 @@ def compute_ftle(x, y, T, nsteps, u_fun, v_fun, dudx_fun, dudy_fun, dvdx_fun, dv
                             method=method,
                             atol=atol, rtol=rtol)
         state = result.y[:, -1] # get last state
+
+    f11 = state[2*n:3*n]
+    f12 = state[3*n:4*n]
+    f21 = state[4*n:5*n]
+    f22 = state[5*n:]
    
     # compute the Cauchy-Green deformation tensor
     C11 = f11**2 + f21**2
@@ -70,8 +77,8 @@ def test1():
     from cateye import u_fun, v_fun, dudx_fun, dudy_fun, dvdx_fun, dvdy_fun
 
     # Define grid
-    x = np.linspace(1.0, 1.0, 1)
-    y = np.linspace(0., 0., 1)
+    x = np.linspace(1.01, 1.01, 1)
+    y = np.linspace(0.0, 0.0, 1)
     X, Y = np.meshgrid(x, y)
 
     # Compute FTLE
@@ -104,8 +111,8 @@ def test2():
 
     plt.pcolor(X, Y, ftle)
     plt.colorbar(label='FTLE')
-    plt.title('FTLE Field for Cateye Flow using analytic velocity field')
+    plt.title('FTLE Field for Cateye Flow using exact velocity and gradients')
     plt.show()
 
 if __name__ == "__main__":
-    test1()
+    test2()
