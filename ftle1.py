@@ -57,29 +57,30 @@ def compute_ftle(x, y, T, nsteps, u_fun, v_fun, dudx_fun, dudy_fun, dvdx_fun, dv
     xf2, yf2 = xy[:n], xy[n:]
 
     # compute the velocity gradient tensor
-    dxpdx = (xf1 - xf0) / h
-    dxpdy = (xf2 - xf0) / h
-    dypdx = (yf1 - yf0) / h
-    dypdy = (yf2 - yf0) / h
-    
+    f11 = (xf1 - xf0) / h
+    f12 = (xf2 - xf0) / h
+    f21 = (yf1 - yf0) / h
+    f22 = (yf2 - yf0) / h
+
     # compute the Cauchy-Green deformation tensor
-    C11 = dxpdx**2 + dypdx**2
-    C12 = dxpdx*dxpdy + dypdx*dypdy
+    C11 = f11**2 + f21**2
+    C12 = f11*f12 + f21*f22
     C21 = C12
-    C22 = dxpdy**2 + dypdy**2
+    C22 = f12**2 + f22**2
 
     # compute the largest eigenvalue of C
     trace = C11 + C22
     det = C11*C22 - C12*C21
     lambda1 = trace / 2 + np.sqrt((trace / 2)**2 - det)
 
-    # compute the FTLE
+   # compute the FTLE
     ftle = np.log(lambda1) / (2 * np.abs(T))
 
     # det F
-    detF = dxpdx * dypdy - dxpdy * dypdx
+    detF = f11 * f22 - f12 * f21
 
     return {'ftle': ftle, 'detF': detF}
+
 
 def test1():
     # Example usage with cateye flow
@@ -134,12 +135,6 @@ def test2():
     plt.show()
     ftle = ftle.reshape((ny, nx))
 
-    print(f'ftle min = {ftle.min()} max = {ftle.max()}')
-
-    plt.pcolor(X, Y, ftle)
-    plt.colorbar(label='FTLE')
-    plt.title('FTLE Field for Cateye Flow using exact velocity and finite difference')
-    plt.show()
 
 if __name__ == "__main__":
     test1()
