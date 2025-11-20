@@ -113,7 +113,7 @@ def test2():
     T = 5.0
     nsteps = 10
     res = compute_ftle(X.reshape(-1), Y.reshape(-1), T, nsteps, u_fun, v_fun, dudx_fun, dudy_fun, dvdx_fun, dvdy_fun,
-                        h=0.01, atol=1e-8, rtol=1e-8, method='LSODA')
+                        h=0.001, atol=1e-8, rtol=1e-8, method='RK45') #LSODA')
     ftle = res['ftle'].reshape((ny, nx))
     detF = res['detF'].reshape((ny, nx))
 
