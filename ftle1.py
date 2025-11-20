@@ -177,7 +177,7 @@ def main(*, nx: int =100, ny: int =100, T: float =5.0, nsteps: int =10, h: float
         ax2.set_title('det F - 1')
         fig.colorbar(im2, ax=ax2, label='det F - 1')
 
-        fig.suptitle('FTLE Field for Cateye Flow using exact velocity and gradients')
+        fig.suptitle('FTLE Field for Cateye Flow using exact velocity and and finite difference gradients')
         plt.tight_layout()
         plt.show()
 
