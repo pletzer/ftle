@@ -1,5 +1,6 @@
 import numpy as np
 import scipy
+import defopt
 
 def expm_2x2_trace_free(a, b, c, d):
     """
@@ -187,7 +188,52 @@ def test2():
     plt.show()
     ftle = ftle.reshape((ny, nx))
 
+def main(*, nx: int =100, ny: int =100, T: float =5.0, nsteps: int =10, 
+         xmin: float =-2.0, xmax: float =2.0, ymin: float =-1.5, ymax: float =1.5,
+         plot: bool =True, solver: str ='LSODA'):
+    """
+    Compute and plot the FTLE field for the cateye flow.
+    Parameters:
+        nx: Number of grid points in x direction.
+        ny: Number of grid points in y direction.
+        T: Total integration time.
+        nsteps: Number of integration steps.
+        xmin, xmax: x domain limits.
+        ymin, ymax: y domain limits.
+        plot: Whether to plot the results (defaut yes).
+        solver: ODE solver to use ('RK45', 'LSODA', etc.).
+    """
+    # Example usage with cateye flow
+    from cateye import u_fun, v_fun, dudx_fun, dudy_fun, dvdx_fun, dvdy_fun
+    import matplotlib.pyplot as plt 
+
+    # Define grid
+    x = np.linspace(xmin, xmax, nx)
+    y = np.linspace(ymin, ymax, ny)
+    X, Y = np.meshgrid(x, y)
+
+    # Compute FTLE
+    res = compute_ftle(X.reshape(-1), Y.reshape(-1), T, nsteps, u_fun, v_fun, dudx_fun, dudy_fun, dvdx_fun, dvdy_fun,
+                        atol=1e-8, rtol=1e-8, method=solver) # LSODA struggles here
+    ftle = res['ftle'].reshape((ny, nx))
+    detF = res['detF'].reshape((ny, nx))
+
+    print(f'ftle min = {ftle.min()} max = {ftle.max()}')
+
+    if plot:
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
+        im1 = ax1.pcolor(X, Y, ftle)
+        fig.colorbar(im1, ax=ax1, label='FTLE')
+        ax1.set_title('FTLE')
+
+        im2 = ax2.pcolor(X, Y, detF-1)
+        ax2.set_title('det F - 1')
+        fig.colorbar(im2, ax=ax2, label='det F - 1')
+
+        fig.suptitle('FTLE Field for Cateye Flow using exact velocity and gradients')
+        plt.tight_layout()
+        plt.show()
+
 
 if __name__ == "__main__":
-    test1()
-    test2()
+    defopt.run(main)
