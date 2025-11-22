@@ -66,7 +66,7 @@ def main(*, nx: int =100, ny: int =100, T: float =5.0,
     if plot:
         plt.pcolor(x, y, ftle.T)
         plt.colorbar(label='FTLE')
-        plt.title('FTLE for Cateye Flow using numbaCS')
+        plt.title(f'FTLE for Cateye Flow using numbaCS T={T}')
         plt.show()
 
 

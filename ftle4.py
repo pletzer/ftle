@@ -5,61 +5,79 @@ import defopt
 """
 Compute the Finite-Time Lyapunov Exponent (FTLE) using finite differences
 to approximate the velocity gradient tensor. This involves integrating only the
-trajectories and estimating the gradients via small perturbations.
+trajectories and estimating the gradients via small perturbations. In this example,
+the perturbation is equal to the cell size.
 """
 
-def compute_ftle(x, y, T, nsteps, u_fun, v_fun, dudx_fun, dudy_fun, dvdx_fun, dvdy_fun, 
-                 h=0.01, atol=1e-6, rtol=1e-6, method='LSODA'):
+def compute_ftle(X, Y, T, nsteps, u_fun, v_fun, dudx_fun, dudy_fun, dvdx_fun, dvdy_fun, 
+                 atol=1e-6, rtol=1e-6, method='LSODA'):
+
+    X0 = X.copy()
+    Y0 = Y.copy()
 
     # time step
     dt = T / nsteps
-    n = len(x)
+
+    # flatten the grid coordinates
+    xflat = X.reshape(-1)
+    yflat = Y.reshape(-1)
+
+    # note: assume X, Y are meshgrid outputs, size is ny, nx
+    ny, nx = X.shape
+    n = len(xflat) # total number of points
 
     def vel_fun(t, pos):
+        # tendency function. Array pos stores the coordinates as
+        # x0, x1, ..., xn-1, y0, y1, ..., yn-1
         x, y = pos[:n], pos[n:]
+        # compute velocity at the points
         u, v = u_fun(x, y), v_fun(x, y)
         return np.concatenate([u, v])
 
     # integrate the trajectories
     t = 0.0
-    xy = np.concatenate([x, y]) # flat array of initial positions
-    for _ in range(nsteps):
+    xy = np.concatenate([xflat, yflat]) # flat array of initial positions
+    # step through time
+    for istep in range(nsteps):
         result = scipy.integrate.solve_ivp(vel_fun,
-                            t_span=[t, t + dt],
+                            t_span=[istep*t, istep*t + dt],
                             y0=xy,
                             method=method,
                             atol=atol, rtol=rtol)
         xy = result.y[:, -1] # get last position
-    xf0, yf0 = xy[:n], xy[n:]
+    
+    # final positions for the advected coordinate points
+    Xf, Yf = xy[:n].reshape((ny, nx)), xy[n:].reshape((ny, nx))
 
-    t = 0.0
-    xy = np.concatenate([x + h, y]) # flat array of initial positions
-    for _ in range(nsteps):
-        result = scipy.integrate.solve_ivp(vel_fun,
-                            t_span=[t, t + dt],
-                            y0=xy,
-                            method=method,
-                            atol=atol, rtol=rtol)
-        xy = result.y[:, -1] # get last position
-    xf1, yf1 = xy[:n], xy[n:]
+    # allocate the velocity gradient tensor components
+    f11 = np.empty_like(X)
+    f12 = np.empty_like(X)
+    f21 = np.empty_like(X)
+    f22 = np.empty_like(X)
 
+    #
+    # velocity gradient tensor from finite differences
+    #
 
-    t = 0.0
-    xy = np.concatenate([x, y + h]) # flat array of initial positions
-    for _ in range(nsteps):
-        result = scipy.integrate.solve_ivp(vel_fun,
-                            t_span=[t, t + dt],
-                            y0=xy,
-                            method=method,
-                            atol=atol, rtol=rtol)
-        xy = result.y[:, -1] # get last position
-    xf2, yf2 = xy[:n], xy[n:]
+    # dX/dx (ny, nx)
+    f11[:, 1:-1] = (Xf[:,2:] - Xf[:,:-2]) / (X0[:,2:] - X0[:,:-2])
+    f11[:,  0] = (Xf[:, 1] - Xf[:, 0]) / (X0[:, 1] - X0[:, 0]) # one sided differences
+    f11[:, -1] = (Xf[:,-1] - Xf[:,-2]) / (X0[:,-1] - X0[:,-2])
 
-    # compute the velocity gradient tensor
-    f11 = (xf1 - xf0) / h
-    f12 = (xf2 - xf0) / h
-    f21 = (yf1 - yf0) / h
-    f22 = (yf2 - yf0) / h
+    # dX/dy
+    f12[1:-1, :] = (Xf[2:,:] - Xf[:-2,:]) / (Y0[2:,:] - Y0[:-2,:])
+    f12[ 0, :] = (Xf[ 1,:] - Xf[ 0,:]) / (Y0[ 1,:] - Y0[ 0,:]) # one sided differences
+    f12[-1, :] = (Xf[-1,:] - Xf[-2,:]) / (Y0[-1,:] - Y0[-2,:])
+
+    # dY/dx
+    f21[:, 1:-1] = (Yf[:,2:] - Yf[:,:-2]) / (X0[:,2:] - X0[:,:-2])
+    f21[:,  0] = (Yf[:, 1] - Yf[:, 0]) / (X0[:, 1] - X0[:, 0]) # one sided differences
+    f21[:, -1] = (Yf[:,-1] - Yf[:,-2]) / (X0[:,-1] - X0[:,-2])
+
+    # dY/dy
+    f22[1:-1, :] = (Yf[2:,:] - Yf[:-2,:]) / (Y0[2:,:] - Y0[:-2,:])
+    f22[ 0, :] = (Yf[ 1,:] - Yf[ 0,:]) / (Y0[ 1,:] - Y0[ 0,:]) # one sided differences
+    f22[-1, :] = (Yf[-1,:] - Yf[-2,:]) / (Y0[-1,:] - Y0[-2,:])
 
     # compute the Cauchy-Green deformation tensor
     C11 = f11**2 + f21**2
@@ -67,12 +85,12 @@ def compute_ftle(x, y, T, nsteps, u_fun, v_fun, dudx_fun, dudy_fun, dvdx_fun, dv
     C21 = C12
     C22 = f12**2 + f22**2
 
-    # compute the largest eigenvalue of C
+    # compute the largest eigenvalue of C, 2D formula
     trace = C11 + C22
     det = C11*C22 - C12*C21
     lambda1 = trace / 2 + np.sqrt((trace / 2)**2 - det)
 
-   # compute the FTLE
+    # compute the FTLE
     ftle = np.log(lambda1) / (2 * np.abs(T))
 
     # det F
@@ -80,23 +98,6 @@ def compute_ftle(x, y, T, nsteps, u_fun, v_fun, dudx_fun, dudy_fun, dvdx_fun, dv
 
     return {'ftle': ftle, 'detF': detF}
 
-
-def test1():
-    # Example usage with cateye flow
-    from cateye import u_fun, v_fun, dudx_fun, dudy_fun, dvdx_fun, dvdy_fun
-
-    # Define grid
-    x = np.linspace(1.01, 1.01, 1)
-    y = np.linspace(0., 0., 1)
-    X, Y = np.meshgrid(x, y)
-
-    # Compute FTLE
-    T = 2.0 # 10.0
-    nsteps = 2 # 10
-    res = compute_ftle(X.reshape(-1), Y.reshape(-1), T, nsteps, u_fun, v_fun, dudx_fun, dudy_fun, dvdx_fun, dvdy_fun)
-    ftle = res['ftle']
-    detF = res['detF']
-    print(f'X = {X} Y = {Y} ftle = {ftle} detF = {detF}')
 
 def test2():
     # Example usage with cateye flow
@@ -134,7 +135,7 @@ def test2():
     plt.show()
     ftle = ftle.reshape((ny, nx))
 
-def main(*, nx: int =100, ny: int =100, T: float =5.0, nsteps: int =10, h: float =0.01,
+def main(*, nx: int =100, ny: int =100, T: float =5.0, nsteps: int =10,
          xmin: float =-2.0, xmax: float =2.0, ymin: float =-1.5, ymax: float =1.5,
          plot: bool =True, solver: str ='RK45'):
     """
@@ -160,8 +161,8 @@ def main(*, nx: int =100, ny: int =100, T: float =5.0, nsteps: int =10, h: float
     X, Y = np.meshgrid(x, y)
 
     # Compute FTLE
-    res = compute_ftle(X.reshape(-1), Y.reshape(-1), T, nsteps, u_fun, v_fun, dudx_fun, dudy_fun, dvdx_fun, dvdy_fun,
-                        h=h, atol=1e-8, rtol=1e-8, method=solver)
+    res = compute_ftle(X, Y, T, nsteps, u_fun, v_fun, dudx_fun, dudy_fun, dvdx_fun, dvdy_fun,
+                       atol=1e-8, rtol=1e-8, method=solver)
     ftle = res['ftle'].reshape((ny, nx))
     detF = res['detF'].reshape((ny, nx))
 

@@ -1,0 +1,8 @@
+numpy
+scipy
+matplotlib
+defopt
+numbacs
+numba
+numbalsoda
+git+https://github.com/alb3rtjarvis/numbacs.git

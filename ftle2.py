@@ -183,7 +183,7 @@ def test2():
     ax2.set_title('det F - 1')
     fig.colorbar(im2, ax=ax2, label='det F - 1')
 
-    fig.suptitle('FTLE Field for Cateye Flow using exact velocity and area preserving F integration')
+    fig.suptitle(f'FTLE Field for Cateye Flow using exact velocity and area preserving F integration T={T}')
     plt.tight_layout()
     plt.show()
     ftle = ftle.reshape((ny, nx))

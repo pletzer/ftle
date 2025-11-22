@@ -41,6 +41,7 @@ def compute_ftle(x, y, T, nsteps, u_fun, v_fun, dudx_fun, dudy_fun, dvdx_fun, dv
 
     # integrate the trajectories and the velocity Jacobian
     t = 0.0
+    # initially F is identity
     f11 = np.ones(n)
     f12 = np.zeros(n)
     f21 = np.zeros(n)
@@ -172,7 +173,7 @@ def main(*, nx: int =100, ny: int =100, T: float =5.0, nsteps: int =10,
         ax2.set_title('det F - 1')
         fig.colorbar(im2, ax=ax2, label='det F - 1')
 
-        fig.suptitle('FTLE Field for Cateye Flow using exact velocity and gradients')
+        fig.suptitle(f'FTLE Field for Cateye Flow using exact velocity and gradients T={T}')
         plt.tight_layout()
         plt.show()
 
