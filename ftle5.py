@@ -35,6 +35,8 @@ def compute_ftle(X, Y, T, nsteps, u_fun, v_fun, dudx_fun, dudy_fun, dvdx_fun, dv
     # save the grid node, initial positions
     X0 = X.copy()
     Y0 = Y.copy()
+    xmin = X0[0, 0]
+    ymin = Y0[0, 0]
 
     # assume uniform grid spacing
     dx = X0[0,1] - X0[0,0]
@@ -52,49 +54,39 @@ def compute_ftle(X, Y, T, nsteps, u_fun, v_fun, dudx_fun, dudy_fun, dvdx_fun, dv
     n = len(xflat) # total number of points
 
     def vel_fun(t, pos):
+
         # tendency function. Array pos stores the coordinates as
         # x0, x1, ..., xn-1, y0, y1, ..., yn-1
         x, y = pos[:n].copy(), pos[n:].copy()
 
-        xx = x.reshape((ny, nx))
-        yy = y.reshape((ny, nx))
+        jfloat = np.clip( (y - ymin) / dy, 0, ny - 1)
+        ifloat = np.clip( (x - xmin) / dx, 0, nx - 1)
 
-        jjfloat = np.clip( (yy - Y0[0,0]) / dy, 0, ny - 1)
-        iifloat = np.clip( (xx - X0[0,0]) / dx, 0, nx - 1)
+        j0 = np.clip( np.floor(jfloat).astype(int), 0, ny - 2)
+        i0 = np.clip( np.floor(ifloat).astype(int), 0, nx - 2)
+        j1 = j0 + 1
+        i1 = i0 + 1
 
-        jj0 = np.clip( np.floor(jjfloat).astype(int), 0, ny - 2)
-        ii0 = np.clip( np.floor(iifloat).astype(int), 0, nx - 2)
-        jj1 = jj0 + 1
-        ii1 = ii0 + 1
-
-        eta = jjfloat - jj0
-        xsi = iifloat - ii0
+        eta = jfloat - j0
+        xsi = ifloat - i0
 
         #
         # compute the velocity at the points
         #
 
-        # exact, works
-        # print(f'min/max xx: {xx.min()}/{xx.max()} yy: {yy.min()}/{yy.max()}')
-        # uu = u_fun(xx, yy)
-        # vv = v_fun(xx, yy)
+        # exact
+        # u = u_fun(x, y)
+        # v = v_fun(xx, y)
 
-
-        # xx2 = xx[jj0, ii0]*(1.0 - xsi) + xx[jj0, ii1]*xsi
-        # yy2 = yy[jj0, ii0]*(1.0 - eta) + yy[jj1, ii0]*eta
-        # print(f'min/max xx2: {xx2.min()}/{xx2.max()} yy2: {yy2.min()}/{yy2.max()}')
-        # uu = u_fun(xx2, yy2)
-        # vv = v_fun(xx2, yy2)
-
-        uu = Uface[jj0, ii0]*(1.0 - xsi) + Uface[jj0, ii1]*xsi
-        vv = Vface[jj0, ii0]*(1.0 - eta) + Vface[jj1, ii0]*eta
+        u = Uface[j0, i0]*(1.0 - xsi) + Uface[j0, i1]*xsi
+        v = Vface[j0, i0]*(1.0 - eta) + Vface[j1, i0]*eta
 
         # # set the velocity to zero outside the domain
         # domain_mask = (xx >= X0[0, 0]) & (xx <= X0[0,-1]) & (yy >= Y0[0, 0]) & (yy <= Y0[-1,0])
         # uu *= domain_mask
         # vv *= domain_mask
 
-        return np.concatenate([uu.reshape(-1), vv.reshape(-1)])
+        return np.concatenate([u, v])
 
     # integrate the trajectories
     t = 0.0
