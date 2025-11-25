@@ -31,8 +31,8 @@ def compute_ftle(X, Y, T, nsteps, u_fun, v_fun, dudx_fun, dudy_fun, dvdx_fun, dv
     Y0 = Y.copy()
 
     # assume uniform grid spacing
-    dx = X0[0,1] - X0[0,0]
-    dy = Y0[1,0] - Y0[0,0]
+    dx = X0[0, 1] - X0[0, 0]
+    dy = Y0[1, 0] - Y0[0, 0]
 
     # time step
     dt = T / nsteps
@@ -46,31 +46,46 @@ def compute_ftle(X, Y, T, nsteps, u_fun, v_fun, dudx_fun, dudy_fun, dvdx_fun, dv
     n = len(xflat) # total number of points
 
     def vel_fun(t, pos):
+
         # tendency function. Array pos stores the coordinates as
         # x0, x1, ..., xn-1, y0, y1, ..., yn-1
         x, y = pos[:n], pos[n:]
 
         #
-        # compute the velocity at the points
+        # compute the velocity along the integrated points
         #
 
-        # find the cell indices for the current positions
-        jfloat = (y - Y0[0,0]) / dy
-        ifloat = (x - X0[0,0]) / dx
-        j = np.floor(jfloat).astype(int)
-        i = np.floor(ifloat).astype(int)
+        iu0 = np.clip( np.floor( (x - Xu[0,0])/dx).astype(int), 0, nx - 1)
+        ju0 = np.clip( np.floor( (y - Yu[0,0])/dy).astype(int), 0, ny - 2)
+        iv0 = np.clip( np.floor( (x - Xv[0,0])/dx).astype(int), 0, nx - 2)
+        jv0 = np.clip( np.floor( (y - Yv[0,0])/dy).astype(int), 0, ny - 1)
+
+        iu1 = np.clip( iu0 + 1, 1, nx - 1)
+        ju1 = np.clip( ju0 + 1, 1, ny - 2)
+        iv1 = np.clip( iv0 + 1, 1, nx - 2)
+        jv1 = np.clip( jv0 + 1, 1, ny - 1)
+
+        xsiu = np.clip( (x - Xu[0,0])/dx - iu0, 0., 1.)
+        etau = np.clip( (y - Yu[0,0])/dy - ju0, 0., 1.)
+        xsiv = np.clip( (x - Xv[0,0])/dx - iv0, 0., 1.)
+        etav = np.clip( (y - Yv[0,0])/dy - jv0, 0., 1.)
+
+        isxu = 1.0 - xsiu
+        ateu = 1.0 - etau
+        isxv = 1.0 - xsiv
+        atev = 1.0 - etav
+
+        # bilinear interpolation
+        u = ateu*isxu*Uface[ju0, iu0] + \
+            ateu*xsiu*Uface[ju0, iu1] + \
+            etau*xsiu*Uface[ju1, iu1] + \
+            etau*isxu*Uface[ju1, iu0]
         
-        # clip to valid range
-        j = np.clip(j, 0, ny - 2)
-        i = np.clip(i, 0, nx - 2)
+        v = atev*isxv*Vface[jv0, iv0] + \
+            atev*xsiv*Vface[jv0, iv1] + \
+            etav*xsiv*Vface[jv1, iv1] + \
+            etav*isxv*Vface[jv1, iv0]
 
-        eta = jfloat - j
-        xsi = ifloat - i
-
-        # u is piecewise linear in x and piecewise constant in y
-        # v is piecewise linear in y and piecewise constant in x
-        u = Uface[j, i] * (1 - xsi) + Uface[j, i + 1] * xsi
-        v = Vface[j, i] * (1 - eta) + Vface[j + 1, i] * eta
 
         return np.concatenate([u, v])
 
@@ -136,8 +151,7 @@ def compute_ftle(X, Y, T, nsteps, u_fun, v_fun, dudx_fun, dudy_fun, dvdx_fun, dv
     # det F
     detF = f11 * f22 - f12 * f21
 
-    return {'ftle': ftle, 'detF': detF, 'X0': X0, 'Y0': Y0, 'Xf': Xf, 'Yf': Yf,
-            'Xu': Xu, 'Yu': Yu, 'Xv': Xv, 'Yv': Yv, 'Uface': Uface, 'Vface': Vface}
+    return {'ftle': ftle, 'detF': detF}
 
 
 def test2():
@@ -186,6 +200,7 @@ def main(*, nx: int =100, ny: int =100, T: float =5.0, nsteps: int =10,
         ny: Number of grid points in y direction.
         T: Total integration time.
         nsteps: Number of integration steps.
+        h: Finite difference step size.
         xmin, xmax: x domain limits.
         ymin, ymax: y domain limits.
         solver: ODE solver to use ('RK45', 'LSODA', etc.).
@@ -209,38 +224,16 @@ def main(*, nx: int =100, ny: int =100, T: float =5.0, nsteps: int =10,
     print(f'ftle min = {ftle.min()} max = {ftle.max()}')
 
     if plot:
-
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
         im1 = ax1.pcolor(X, Y, ftle)
         fig.colorbar(im1, ax=ax1, label='FTLE')
         ax1.set_title('FTLE')
 
-        # show the velocities
-        # make them cell centred first
-        Xc = 0.5*(res['Xu'][:, :-1] + res['Xu'][:, 1:])
-        Yc = 0.5*(res['Yv'][:-1, :] + res['Yv'][1:, :])
-        Uc = 0.5*(res['Uface'][:, :-1] + res['Uface'][:, 1:])
-        Vc = 0.5*(res['Vface'][:-1, :] + res['Vface'][1:, :])
-        print(Xc.shape, Yc.shape, Uc.shape, Vc.shape)
-        print(res['Xu'].shape, res['Yv'].shape)
-        ax1.quiver(
-            Xc, Yc,     # cell centres
-            Uc, Vc,     # arrow components
-        angles='xy', scale_units='xy') #, scale=scale
-
-
         im2 = ax2.pcolor(X, Y, detF-1)
         ax2.set_title('det F - 1')
         fig.colorbar(im2, ax=ax2, label='det F - 1')
 
-        # show the start/end points of the trajectories
-        ax2.quiver(
-            res['X0'], res['Y0'],     # tail positions
-            res['Xf'] - res['X0'], res['Yf'] - res['Y0'],       # arrow components
-        angles='xy', scale_units='xy') #, scale=scale
-
-
-        fig.suptitle(f'FTLE Field for Cateye Flow using grid 2-velocity and and finite difference gradients T={T}')
+        fig.suptitle(f'FTLE Field for Cateye Flow using bilinear velocity and and finite difference gradients T={T}')
         plt.tight_layout()
         plt.show()
 

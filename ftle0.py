@@ -17,6 +17,9 @@ def compute_ftle(x, y, T, nsteps, u_fun, v_fun, dudx_fun, dudy_fun, dvdx_fun, dv
     dt = T / nsteps
     n = len(x)
 
+    x0 = x.copy()
+    y0 = y.copy()
+
     def tendency(t, state):
 
         # extract the state variables
@@ -59,6 +62,9 @@ def compute_ftle(x, y, T, nsteps, u_fun, v_fun, dudx_fun, dudy_fun, dvdx_fun, dv
     f12 = state[3*n:4*n]
     f21 = state[4*n:5*n]
     f22 = state[5*n:]
+
+    xf = state[:n]
+    yf = state[n:2*n]
    
     # compute the Cauchy-Green deformation tensor
     C11 = f11**2 + f21**2
@@ -77,7 +83,7 @@ def compute_ftle(x, y, T, nsteps, u_fun, v_fun, dudx_fun, dudy_fun, dvdx_fun, dv
     # det F
     detF = f11 * f22 - f12 * f21
 
-    return {'ftle': ftle, 'detF': detF}
+    return {'ftle': ftle, 'detF': detF, 'x0': x0, 'y0': y0, 'xf': xf, 'yf': yf}
 
 
 def test1():
@@ -172,6 +178,13 @@ def main(*, nx: int =100, ny: int =100, T: float =5.0, nsteps: int =10,
         im2 = ax2.pcolor(X, Y, detF-1)
         ax2.set_title('det F - 1')
         fig.colorbar(im2, ax=ax2, label='det F - 1')
+
+        # show the start/end points
+        plt.quiver(
+            res['x0'], res['y0'],     # tail positions
+            res['xf'] - res['x0'], res['yf'] - res['y0'],       # arrow components
+        angles='xy', scale_units='xy') #, scale=scale
+
 
         fig.suptitle(f'FTLE Field for Cateye Flow using exact velocity and gradients T={T}')
         plt.tight_layout()
