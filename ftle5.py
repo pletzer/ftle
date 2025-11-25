@@ -26,6 +26,12 @@ def compute_ftle(X, Y, T, nsteps, u_fun, v_fun, dudx_fun, dudy_fun, dvdx_fun, dv
     Uface[:, :] = u_fun(Xu, Yu)
     Vface[:, :] = v_fun(Xv, Yv)
 
+    # # set the velocity at the boundary to be zero
+    # Uface[:, 0] = 0
+    # Uface[:, -1] = 0
+    # Vface[0, :] = 0
+    # Vface[-1, :] = 0
+
     # save the grid node, initial positions
     X0 = X.copy()
     Y0 = Y.copy()
@@ -48,31 +54,47 @@ def compute_ftle(X, Y, T, nsteps, u_fun, v_fun, dudx_fun, dudy_fun, dvdx_fun, dv
     def vel_fun(t, pos):
         # tendency function. Array pos stores the coordinates as
         # x0, x1, ..., xn-1, y0, y1, ..., yn-1
-        x, y = pos[:n], pos[n:]
+        x, y = pos[:n].copy(), pos[n:].copy()
+
+        xx = x.reshape((ny, nx))
+        yy = y.reshape((ny, nx))
+
+        jjfloat = np.clip( (yy - Y0[0,0]) / dy, 0, ny - 1)
+        iifloat = np.clip( (xx - X0[0,0]) / dx, 0, nx - 1)
+
+        jj0 = np.clip( np.floor(jjfloat).astype(int), 0, ny - 2)
+        ii0 = np.clip( np.floor(iifloat).astype(int), 0, nx - 2)
+        jj1 = jj0 + 1
+        ii1 = ii0 + 1
+
+        eta = jjfloat - jj0
+        xsi = iifloat - ii0
 
         #
         # compute the velocity at the points
         #
 
-        # find the cell indices for the current positions
-        jfloat = (y - Y0[0,0]) / dy
-        ifloat = (x - X0[0,0]) / dx
-        j = np.floor(jfloat).astype(int)
-        i = np.floor(ifloat).astype(int)
-        
-        # clip to valid range
-        j = np.clip(j, 0, ny - 2)
-        i = np.clip(i, 0, nx - 2)
+        # exact, works
+        # print(f'min/max xx: {xx.min()}/{xx.max()} yy: {yy.min()}/{yy.max()}')
+        # uu = u_fun(xx, yy)
+        # vv = v_fun(xx, yy)
 
-        eta = jfloat - j
-        xsi = ifloat - i
 
-        # u is piecewise linear in x and piecewise constant in y
-        # v is piecewise linear in y and piecewise constant in x
-        u = Uface[j, i] * (1 - xsi) + Uface[j, i + 1] * xsi
-        v = Vface[j, i] * (1 - eta) + Vface[j + 1, i] * eta
+        # xx2 = xx[jj0, ii0]*(1.0 - xsi) + xx[jj0, ii1]*xsi
+        # yy2 = yy[jj0, ii0]*(1.0 - eta) + yy[jj1, ii0]*eta
+        # print(f'min/max xx2: {xx2.min()}/{xx2.max()} yy2: {yy2.min()}/{yy2.max()}')
+        # uu = u_fun(xx2, yy2)
+        # vv = v_fun(xx2, yy2)
 
-        return np.concatenate([u, v])
+        uu = Uface[jj0, ii0]*(1.0 - xsi) + Uface[jj0, ii1]*xsi
+        vv = Vface[jj0, ii0]*(1.0 - eta) + Vface[jj1, ii0]*eta
+
+        # # set the velocity to zero outside the domain
+        # domain_mask = (xx >= X0[0, 0]) & (xx <= X0[0,-1]) & (yy >= Y0[0, 0]) & (yy <= Y0[-1,0])
+        # uu *= domain_mask
+        # vv *= domain_mask
+
+        return np.concatenate([uu.reshape(-1), vv.reshape(-1)])
 
     # integrate the trajectories
     t = 0.0
@@ -221,8 +243,6 @@ def main(*, nx: int =100, ny: int =100, T: float =5.0, nsteps: int =10,
         Yc = 0.5*(res['Yv'][:-1, :] + res['Yv'][1:, :])
         Uc = 0.5*(res['Uface'][:, :-1] + res['Uface'][:, 1:])
         Vc = 0.5*(res['Vface'][:-1, :] + res['Vface'][1:, :])
-        print(Xc.shape, Yc.shape, Uc.shape, Vc.shape)
-        print(res['Xu'].shape, res['Yv'].shape)
         ax1.quiver(
             Xc, Yc,     # cell centres
             Uc, Vc,     # arrow components

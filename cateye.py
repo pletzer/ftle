@@ -3,12 +3,15 @@ import numpy as np
 from numba import cfunc, njit
 from numbalsoda import lsoda_sig
 
+# v = grad(stream function) x zhat
 def stream_fun(x, y):
     return y**2/2 + (sp.sin(sp.pi*x/2))**2 / 2
 
+# u = d psi/ dy
 def u_fun(x, y):
     return y
 
+# v = - d psi / dx
 def v_fun(x, y):
     return -pi*sin(pi*x/2)*cos(pi*x/2)/2
 

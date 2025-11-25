@@ -33,6 +33,7 @@ def compute_ftle(x, y, T, nsteps, u_fun, v_fun, dudx_fun, dudy_fun, dvdx_fun, dv
         dvdx = dvdx_fun(x, y)
         dvdy = dvdy_fun(x, y)
 
+        # F is the velocity Jacobian F = (grad u)
         f11dot = dudx*f11 + dudy*f21
         f12dot = dudx*f12 + dudy*f22
         f21dot = dvdx*f11 + dvdy*f21
@@ -67,6 +68,7 @@ def compute_ftle(x, y, T, nsteps, u_fun, v_fun, dudx_fun, dudy_fun, dvdx_fun, dv
     yf = state[n:2*n]
    
     # compute the Cauchy-Green deformation tensor
+    # C = F^T . F
     C11 = f11**2 + f21**2
     C12 = f11*f12 + f21*f22
     C21 = C12
