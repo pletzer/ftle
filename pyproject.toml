@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=40.6.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ftle"
+version = "0.1.0"
+dynamic = ["dependencies"]
+authors = [
+  { name="Alexander Pletzer", email="alexander@gokliya.net" },
+]
+description = "Explore differnet algorithms to compute the finite time Lyapunov exponent"
+readme = "README.md"
+requires-python = ">=3.11"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+
+[tool.setuptools.dynamic]
+dependencies = {file = ["requirements.txt"]}
+
+[project.urls]
+"Homepage" = "github.com/pletzer/ftle"
+"Bug Tracker" = "github.com/pletzer/ftle/issues"
+
