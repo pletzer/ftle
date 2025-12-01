@@ -83,7 +83,7 @@ def compute_ftle(x, y, T, nsteps, u_fun, v_fun, dudx_fun, dudy_fun, dvdx_fun, dv
 
 def test1():
     # Example usage with cateye flow
-    from cateye import u_fun, v_fun, dudx_fun, dudy_fun, dvdx_fun, dvdy_fun
+    from ftle.cateye import u_fun, v_fun, dudx_fun, dudy_fun, dvdx_fun, dvdy_fun
 
     # Define grid
     x = np.linspace(1.01, 1.01, 1)
@@ -100,7 +100,7 @@ def test1():
 
 def test2():
     # Example usage with cateye flow
-    from cateye import u_fun, v_fun, dudx_fun, dudy_fun, dvdx_fun, dvdy_fun
+    from ftle.cateye import u_fun, v_fun, dudx_fun, dudy_fun, dvdx_fun, dvdy_fun
     import matplotlib.pyplot as plt 
 
     # Define grid
@@ -151,7 +151,7 @@ def main(*, nx: int =100, ny: int =100, T: float =5.0, nsteps: int =10, h: float
         plot: Whether to plot the results (defaut yes).
     """
     # Example usage with cateye flow
-    from cateye import u_fun, v_fun, dudx_fun, dudy_fun, dvdx_fun, dvdy_fun
+    from ftle.cateye import u_fun, v_fun, dudx_fun, dudy_fun, dvdx_fun, dvdy_fun
     import matplotlib.pyplot as plt 
 
     # Define grid

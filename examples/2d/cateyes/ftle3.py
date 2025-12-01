@@ -1,6 +1,6 @@
 import numpy as np
 import defopt
-from cateye import cateye_flow
+from ftle.cateye import cateye_flow
 from numbacs.integration import flowmap_grid_2D
 from numbacs.diagnostics import ftle_grid_2D
 import matplotlib.pyplot as plt 

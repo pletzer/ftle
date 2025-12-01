@@ -55,20 +55,20 @@ def compute_ftle(X, Y, T, nsteps, u_fun, v_fun, dudx_fun, dudy_fun, dvdx_fun, dv
         # compute the velocity along the integrated points
         #
 
-        iu0 = np.clip( np.floor( (x - Xu[0,0])/dx).astype(int), 0, nx - 1)
-        ju0 = np.clip( np.floor( (y - Yu[0,0])/dy).astype(int), 0, ny - 2)
-        iv0 = np.clip( np.floor( (x - Xv[0,0])/dx).astype(int), 0, nx - 2)
-        jv0 = np.clip( np.floor( (y - Yv[0,0])/dy).astype(int), 0, ny - 1)
+        iu0 = np.clip( np.floor( (x - Xu[0,0])/dx).astype(int), 0, nx - 1 )
+        ju0 = np.clip( np.floor( (y - Yu[0,0])/dy).astype(int), 0, ny - 2 )
+        iv0 = np.clip( np.floor( (x - Xv[0,0])/dx).astype(int), 0, nx - 2 )
+        jv0 = np.clip( np.floor( (y - Yv[0,0])/dy).astype(int), 0, ny - 1 )
 
-        iu1 = np.clip( iu0 + 1, 1, nx - 1)
-        ju1 = np.clip( ju0 + 1, 1, ny - 2)
-        iv1 = np.clip( iv0 + 1, 1, nx - 2)
-        jv1 = np.clip( jv0 + 1, 1, ny - 1)
+        iu1 = np.clip( iu0 + 1, 1, nx - 1 )
+        ju1 = np.clip( ju0 + 1, 1, ny - 2 )
+        iv1 = np.clip( iv0 + 1, 1, nx - 2 )
+        jv1 = np.clip( jv0 + 1, 1, ny - 1 )
 
-        xsiu = np.clip( (x - Xu[0,0])/dx - iu0, 0., 1.)
-        etau = np.clip( (y - Yu[0,0])/dy - ju0, 0., 1.)
-        xsiv = np.clip( (x - Xv[0,0])/dx - iv0, 0., 1.)
-        etav = np.clip( (y - Yv[0,0])/dy - jv0, 0., 1.)
+        xsiu = np.clip( (x - Xu[0,0])/dx - iu0, 0., 1. )
+        etau = np.clip( (y - Yu[0,0])/dy - ju0, 0., 1. )
+        xsiv = np.clip( (x - Xv[0,0])/dx - iv0, 0., 1. )
+        etav = np.clip( (y - Yv[0,0])/dy - jv0, 0., 1. )
 
         isxu = 1.0 - xsiu
         ateu = 1.0 - etau
@@ -156,7 +156,7 @@ def compute_ftle(X, Y, T, nsteps, u_fun, v_fun, dudx_fun, dudy_fun, dvdx_fun, dv
 
 def test2():
     # Example usage with cateye flow
-    from cateye import u_fun, v_fun, dudx_fun, dudy_fun, dvdx_fun, dvdy_fun
+    from ftle.cateye import u_fun, v_fun, dudx_fun, dudy_fun, dvdx_fun, dvdy_fun
     import matplotlib.pyplot as plt 
 
     # Define grid
@@ -207,7 +207,7 @@ def main(*, nx: int =100, ny: int =100, T: float =5.0, nsteps: int =10,
         plot: Whether to plot the results (defaut yes).
     """
     # Example usage with cateye flow
-    from cateye import u_fun, v_fun, dudx_fun, dudy_fun, dvdx_fun, dvdy_fun
+    from ftle.cateye import u_fun, v_fun, dudx_fun, dudy_fun, dvdx_fun, dvdy_fun
     import matplotlib.pyplot as plt 
 
     # Define grid
