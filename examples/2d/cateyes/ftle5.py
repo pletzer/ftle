@@ -1,6 +1,7 @@
 import numpy as np
 import scipy
 import defopt
+from ftle.deformation_gradient import getF2d
 
 """
 Compute the Finite-Time Lyapunov Exponent (FTLE) using finite differences
@@ -103,35 +104,7 @@ def compute_ftle(X, Y, T, nsteps, u_fun, v_fun, dudx_fun, dudy_fun, dvdx_fun, dv
     # final positions for the advected coordinate points
     Xf, Yf = xy[:n].reshape((ny, nx)), xy[n:].reshape((ny, nx))
 
-    # allocate the velocity gradient tensor components
-    f11 = np.empty_like(X)
-    f12 = np.empty_like(X)
-    f21 = np.empty_like(X)
-    f22 = np.empty_like(X)
-
-    #
-    # velocity gradient tensor from finite differences
-    #
-
-    # dX/dx (ny, nx)
-    f11[:, 1:-1] = (Xf[:,2:] - Xf[:,:-2]) / (X0[:,2:] - X0[:,:-2])
-    f11[:,  0] = (Xf[:, 1] - Xf[:, 0]) / (X0[:, 1] - X0[:, 0]) # one sided differences
-    f11[:, -1] = (Xf[:,-1] - Xf[:,-2]) / (X0[:,-1] - X0[:,-2])
-
-    # dX/dy
-    f12[1:-1, :] = (Xf[2:,:] - Xf[:-2,:]) / (Y0[2:,:] - Y0[:-2,:])
-    f12[ 0, :] = (Xf[ 1,:] - Xf[ 0,:]) / (Y0[ 1,:] - Y0[ 0,:]) # one sided differences
-    f12[-1, :] = (Xf[-1,:] - Xf[-2,:]) / (Y0[-1,:] - Y0[-2,:])
-
-    # dY/dx
-    f21[:, 1:-1] = (Yf[:,2:] - Yf[:,:-2]) / (X0[:,2:] - X0[:,:-2])
-    f21[:,  0] = (Yf[:, 1] - Yf[:, 0]) / (X0[:, 1] - X0[:, 0]) # one sided differences
-    f21[:, -1] = (Yf[:,-1] - Yf[:,-2]) / (X0[:,-1] - X0[:,-2])
-
-    # dY/dy
-    f22[1:-1, :] = (Yf[2:,:] - Yf[:-2,:]) / (Y0[2:,:] - Y0[:-2,:])
-    f22[ 0, :] = (Yf[ 1,:] - Yf[ 0,:]) / (Y0[ 1,:] - Y0[ 0,:]) # one sided differences
-    f22[-1, :] = (Yf[-1,:] - Yf[-2,:]) / (Y0[-1,:] - Y0[-2,:])
+    ((f11, f12), (f21, f22)) = getF2d(dx, dy, Xf, Yf)
 
     # compute the Cauchy-Green deformation tensor
     C11 = f11**2 + f21**2
