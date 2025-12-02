@@ -1,14 +1,7 @@
 import xarray as xr
 import numpy as np
-from math import copysign
-import glob
 import matplotlib.pyplot as plt
 import scipy
-
-from flows_3D import get_interp_arrays_3D, get_flow_3D
-from integration_3D import flowmap_grid_3D
-#from diagnostics_3D_gpu import ftle_grid_3D
-from diagnostics_3D import ftle_grid_3D
 
 import defopt
 from pathlib import Path
@@ -43,7 +36,7 @@ def compute_ftle(ds, time_index, T, method='RK45', atol=1.e-8, rtol=1.e-8):
     Parameters
     ----------
     ds : xarray.Dataset
-        Must contain ds.u, ds.v, ds.w at face-centered locations described in your docstring.
+        Must contain ds.u_xy, ds.v_xy, ds.w_xy at face-centered locations described in your docstring.
         First axis of each variable is time, then nz, ny, nx
     time_index : int
         Time index to take the (time-constant) velocity field from.
@@ -82,9 +75,9 @@ def compute_ftle(ds, time_index, T, method='RK45', atol=1.e-8, rtol=1.e-8):
     zflat = zz.ravel()
 
     # read velocity faces at the requested time index (make them numpy arrays)
-    uface = np.asarray(ds.u[time_index, ...])
-    vface = np.asarray(ds.v[time_index, ...])
-    wface = np.asarray(ds.w[time_index, ...])
+    uface = np.asarray(ds.u_xy[time_index, ...])
+    vface = np.asarray(ds.v_xy[time_index, ...])
+    wface = np.asarray(ds.w_xy[time_index, ...])
 
     # define RHS: returns flat vector of length 3*n
     def vel_fun(t, pos):
