@@ -55,14 +55,13 @@ def writeFTLEVTI(var_full, filename: str='ftle_1200.vi'):
     grid.save(filename)
 
 
-def compute_ftle(ds, time_index, T, nsteps=1, method='RK45', atol=1.e-8, rtol=1.e-8):
+def compute_ftle(ds, time_index, T, method='RK45', atol=1.e-8, rtol=1.e-8):
     """
     Compute the finite time Lyapunov exponent
     @param ds xarray dataset with Arakawa C satggered velocity fields ds.u, ds.v, ds.w. The first axis is
               assumed to be time. The grid axes are ds.x, ds.y and ds.z_xy. The grid is assumed to be uniform
     @param time_index time index. In this version we're holding the vector field constant at this time index.
     @param T integration time for the trajectories
-    @param nsteps number of time step when integrating the trajectories
     @param method integration method, eg LSODA, RK23, BDF, DOP853
     @param atol absolute integrator tolerance
     @param rtol relative integrator tolerance
@@ -135,13 +134,12 @@ def compute_ftle(ds, time_index, T, nsteps=1, method='RK45', atol=1.e-8, rtol=1.
     dt = T / nsteps
     # the trajectories start at the grid node locations
     xyz = np.concatenate([xflat, yflat, zflat]) # flat array of initial positions
-    for istep in range(nsteps):
-        result = scipy.integrate.solve_ivp(vel_fun,
-                            t_span=[istep*dt, (istep + 1)*dt],
-                            y0=xyz, # initial condition
-                            method=method,
-                            atol=atol, rtol=rtol)
-    
+    result = scipy.integrate.solve_ivp(vel_fun,
+                        t_span=[istep*dt, (istep + 1)*dt],
+                        y0=xyz, # initial condition
+                        method=method,
+                        atol=atol, rtol=rtol)
+
     xyz = result.y[:, -1] # get last position
     # final positions
     Xf = xyz[0*n:1*n].reshape(xx.shape)
@@ -213,22 +211,42 @@ def compute_ftle(ds, time_index, T, nsteps=1, method='RK45', atol=1.e-8, rtol=1.
     C32 = C23
     C33 = f13*f13 + f23*f23 + f33*f33
 
+    # compute the eigenvalues of Cauchy-Green tensor
 
-    # copute the eigenvalues of Cauchy-Green tensor
-    T1 = C11 + C22 + C33 # tr(C)
-    T2 = C11*C11 + C22*C22 + C33*C33 + 2*(C12*C12 + C13*C13 + C23*C23) # tr(C^2)
-    T3 = C11*(C22*C33 - C23*C23) - C12*(C12*C33 - C13*C23) + C13*(C12*C23 - C13*C22) # det(C)
-    Q = (T1*T1 - 3*T2) / 18
-    R = (5*T1*T1*T1 - 9*T1*T2 - 54*T3) / 108
+    # Stack the components into a single array of shape (n, 3, 3)
+    C = np.stack([
+        np.stack([C11, C12, C13], axis=-1),
+        np.stack([C21, C22, C23], axis=-1),
+        np.stack([C31, C32, C33], axis=-1)
+    ], axis=-2)  # shape: (nx, ny, nz, 3, 3)
 
-    Theta = np.acos( np.clip(R/np.sqrt(-Q*Q*Q), -1, 1) )
+    # Flatten spatial dimensions so we have (n, 3, 3)
+    C_flat = C.reshape(-1, 3, 3)
 
-    lambda0 = T1/3 + 2*np.sqrt(-Q) * np.cos((Theta + 2*np.pi*0)/3)
-    lambda1 = T1/3 + 2*np.sqrt(-Q) * np.cos((Theta + 2*np.pi*1)/3)
-    lambda2 = T1/3 + 2*np.sqrt(-Q) * np.cos((Theta + 2*np.pi*2)/3)
+    # Compute eigenvalues for all points
+    eigvals = np.linalg.eigvalsh(C_flat)  # shape: (n, 3)
 
-    # find the max eigenvalue
-    max_lambda = np.maximum.reduce([lambda0, lambda1, lambda2])
+    # Take max eigenvalue for each point
+    max_lambda = eigvals[:, -1]  # since eigvalsh returns sorted eigenvalues
+
+    max_lambda = max_lambda.reshape(xx.shape)
+
+
+    # # compute the eigenvalues of Cauchy-Green tensor
+    # T1 = C11 + C22 + C33 # tr(C)
+    # T2 = C11*C11 + C22*C22 + C33*C33 + 2*(C12*C12 + C13*C13 + C23*C23) # tr(C^2)
+    # T3 = C11*(C22*C33 - C23*C23) - C12*(C12*C33 - C13*C23) + C13*(C12*C23 - C13*C22) # det(C)
+    # Q = (T1*T1 - 3*T2) / 18
+    # R = (5*T1*T1*T1 - 9*T1*T2 - 54*T3) / 108
+
+    # Theta = np.acos( np.clip(R/np.sqrt(-Q*Q*Q), -1, 1) )
+
+    # lambda0 = T1/3 + 2*np.sqrt(-Q) * np.cos((Theta + 2*np.pi*0)/3)
+    # lambda1 = T1/3 + 2*np.sqrt(-Q) * np.cos((Theta + 2*np.pi*1)/3)
+    # lambda2 = T1/3 + 2*np.sqrt(-Q) * np.cos((Theta + 2*np.pi*2)/3)
+
+    # # find the max eigenvalue
+    # max_lambda = np.maximum.reduce([lambda0, lambda1, lambda2])
 
     # return the Lyapunov exponent
     return np.log(max_lambda) / (2*abs(T))
