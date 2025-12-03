@@ -56,17 +56,23 @@ def compute_ftle(ds, time_index, T, method='RK45', atol=1.e-8, rtol=1.e-8):
     if T == 0:
         raise ValueError("Integration time T must be non-zero.")
 
-    # grid coords (1D)
-    x = np.asarray(ds.x)
-    y = np.asarray(ds.y)
-    z = np.asarray(ds.zu_xy)   # you used ds.zu_xy earlier
+    # nodal grid coords (1D)
+    x = np.asarray(ds.xu)
+    y = np.asarray(ds.yv)
+    z = np.asarray(ds.zw_xy)   # you used ds.zu_xy earlier
 
     xmin, ymin, zmin = x[0], y[0], z[0]
+    xmax, ymax, zmax = x[-1], y[-1], z[-1]
+    print(f'xmin, xmax = {xmin}, {xmax}')
+    print(f'ymin, ymax = {ymin}, {ymax}')
+    print(f'zmin, zmax = {zmin}, {zmax}')
     dx, dy, dz = float(x[1] - x[0]), float(y[1] - y[0]), float(z[1] - z[0])
+    print(f'dx, dy, dz = {dx}, {dy}, {dz}')
     nx, ny, nz = len(x), len(y), len(z)
+    print(f'nx, ny, nz = {nx}, {ny}, {nz}')
 
-    # create meshgrid with indexing='ij' so shape is (nx, ny, nz)
-    xx, yy, zz = np.meshgrid(x, y, z, indexing='ij')  # shapes: (nx, ny, nz)
+    # create meshgrid with indexing='xy' so shape is (nz, ny, nx)
+    xx, yy, zz = np.meshgrid(x, y, z, indexing='xy')  # shapes: (nz, ny, nx)
 
     # flatten initial coordinates into 1D arrays length n = nx * ny * nz
     n = nx * ny * nz
@@ -75,9 +81,10 @@ def compute_ftle(ds, time_index, T, method='RK45', atol=1.e-8, rtol=1.e-8):
     zflat = zz.ravel()
 
     # read velocity faces at the requested time index (make them numpy arrays)
-    uface = np.asarray(ds.u_xy[time_index, ...])
-    vface = np.asarray(ds.v_xy[time_index, ...])
-    wface = np.asarray(ds.w_xy[time_index, ...])
+    # replace Nans with zeros
+    uface = np.asarray(ds.u_xy[time_index, ...].fillna(0.0))
+    vface = np.asarray(ds.v_xy[time_index, ...].fillna(0.0))
+    wface = np.asarray(ds.w_xy[time_index, ...].fillna(0.0))
 
     # define RHS: returns flat vector of length 3*n
     def vel_fun(t, pos):
@@ -232,6 +239,7 @@ def main(*, filename: str='small_blf_day_loc1_4m_xy_N04.003.nc',
 
     for time_index in range(t_start, t_end):
 
+        print(f'time index = {time_index}...')
         ftle = compute_ftle(ds, time_index, T=T)
 
         writeVTI(ftle, dx, dy, dz, varname='ftle', filename=f'ftle_{time_index:04d}.vi')
