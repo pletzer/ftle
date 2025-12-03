@@ -256,7 +256,7 @@ def main(*, filename: str='small_blf_day_loc1_4m_xy_N04.003.nc',
         print(f'time index = {time_index}...')
         ftle = compute_ftle(ds, time_index, T=T, imin=imin, imax=imax, jmin=jmin, jmax=jmax)
 
-        writeVTI(ftle, dx, dy, dz, varname='ftle', filename=f'ftle_{time_index:04d}.vi')
+        writeVTI(ftle, dx, dy, dz, varname='ftle', filename=f'ftle_{time_index:04d}.vti')
 
 
 if __name__ == '__main__':
