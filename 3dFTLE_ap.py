@@ -224,7 +224,6 @@ def compute_ftle(ds, time_index, T, imin, imax, jmin, jmax, method='RK45', atol=
 
 
 def main(*, filename: str='small_blf_day_loc1_4m_xy_N04.003.nc', 
-    save_dir: str='./test', 
     t_start: int=10, t_end: int=11, 
     T: int=-10, 
     imin: int=0, imax: int=-1,
@@ -232,7 +231,6 @@ def main(*, filename: str='small_blf_day_loc1_4m_xy_N04.003.nc',
     """
     Compute the FTLE
     @param filename input PALM NetCDF file name
-    @param save_dir directory to save the output file
     @param t_start starting time index
     @param t_end one past last time index
     @param T trajectory integration time
