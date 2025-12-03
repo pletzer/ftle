@@ -29,7 +29,7 @@ def writeVTI(data, dx, dy, dz, varname='ftle', filename: str='ftle_1200.vi'):
 import numpy as np
 from scipy.integrate import solve_ivp
 
-def compute_ftle(ds, time_index, T, method='RK45', atol=1.e-8, rtol=1.e-8):
+def compute_ftle(ds, time_index, T, imin, imax, jmin, jmax, method='RK45', atol=1.e-8, rtol=1.e-8):
     """
     Compute FTLE (finite-time Lyapunov exponent) for a 3D grid of initial points.
 
@@ -42,6 +42,14 @@ def compute_ftle(ds, time_index, T, method='RK45', atol=1.e-8, rtol=1.e-8):
         Time index to take the (time-constant) velocity field from.
     T : float
         Integration time (can be positive or negative). Must be non-zero.
+    imin : int
+        Min index in x direction
+    imax : int
+        Max index in x direction, imax > imin + 1 or negetive
+    jmin : int
+        Min index in y direction
+    jmax : int
+        Max index in y direction, jmax > jmin + 1 or negative
     method : str
         Integration method for scipy.solve_ivp (e.g. 'RK45','RK23','DOP853','Radau','BDF','LSODA').
     atol, rtol : float
@@ -56,10 +64,10 @@ def compute_ftle(ds, time_index, T, method='RK45', atol=1.e-8, rtol=1.e-8):
     if T == 0:
         raise ValueError("Integration time T must be non-zero.")
 
-    # nodal grid coords (1D)
-    x = np.asarray(ds.xu)
-    y = np.asarray(ds.yv)
-    z = np.asarray(ds.zw_xy)   # you used ds.zu_xy earlier
+    # nodal grid coords (1D) for the patch we're computing the FTLE for
+    x = np.asarray(ds.xu[imin: imax])
+    y = np.asarray(ds.yv[jmin: jmax])
+    z = np.asarray(ds.zw_xy)
 
     xmin, ymin, zmin = x[0], y[0], z[0]
     xmax, ymax, zmax = x[-1], y[-1], z[-1]
@@ -82,9 +90,9 @@ def compute_ftle(ds, time_index, T, method='RK45', atol=1.e-8, rtol=1.e-8):
 
     # read velocity faces at the requested time index (make them numpy arrays)
     # replace Nans with zeros
-    uface = np.asarray(ds.u_xy[time_index, ...].fillna(0.0))
-    vface = np.asarray(ds.v_xy[time_index, ...].fillna(0.0))
-    wface = np.asarray(ds.w_xy[time_index, ...].fillna(0.0))
+    uface = np.asarray(ds.u_xy[time_index, :, jmin:jmax, imin:imax].fillna(0.0))
+    vface = np.asarray(ds.v_xy[time_index, :, jmin:jmax, imin:imax].fillna(0.0))
+    wface = np.asarray(ds.w_xy[time_index, :, jmin:jmax, imin:imax].fillna(0.0))
 
     # define RHS: returns flat vector of length 3*n
     def vel_fun(t, pos):
@@ -218,7 +226,9 @@ def compute_ftle(ds, time_index, T, method='RK45', atol=1.e-8, rtol=1.e-8):
 def main(*, filename: str='small_blf_day_loc1_4m_xy_N04.003.nc', 
     save_dir: str='./test', 
     t_start: int=10, t_end: int=11, 
-    T: int=-10):
+    T: int=-10, 
+    imin: int=0, imax: int=-1,
+    jmin: int=0, jmax: int=-1):
     """
     Compute the FTLE
     @param filename input PALM NetCDF file name
@@ -226,13 +236,17 @@ def main(*, filename: str='small_blf_day_loc1_4m_xy_N04.003.nc',
     @param t_start starting time index
     @param t_end one past last time index
     @param T trajectory integration time
+    @param imin min index in x direction
+    @param imax max index in x direction
+    @param jmin min index in y direction
+    @param jmax max index in y direction
     """
 
     # read the data and select times
     ds = xr.open_dataset(filename, engine='netcdf4', decode_timedelta=False)
 
-    dx = (ds.x[1] - ds.x[0]).item()
-    dy = (ds.y[1] - ds.y[0]).item()
+    dx = (ds.xu[1] - ds.xu[0]).item()
+    dy = (ds.yv[1] - ds.yv[0]).item()
     dz = (ds.zu_xy[1] - ds.zu_xy[0]).item()
 
     print(f'time = {ds.time}')
@@ -240,7 +254,7 @@ def main(*, filename: str='small_blf_day_loc1_4m_xy_N04.003.nc',
     for time_index in range(t_start, t_end):
 
         print(f'time index = {time_index}...')
-        ftle = compute_ftle(ds, time_index, T=T)
+        ftle = compute_ftle(ds, time_index, T=T, imin=imin, imax=imax, jmin=jmin, jmax=jmax)
 
         writeVTI(ftle, dx, dy, dz, varname='ftle', filename=f'ftle_{time_index:04d}.vi')
 
