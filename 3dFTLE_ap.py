@@ -97,9 +97,9 @@ def compute_ftle(ds, time_index, T, imin, imax, jmin, jmax, method='RK45', atol=
     # define RHS: returns flat vector of length 3*n
     def vel_fun(t, pos):
         # pos is 3*n vector: [x0...x_{n-1}, y0..., z0...]
-        xi = pos[0:n].copy()
-        yi = pos[n:2*n].copy()
-        zi = pos[2*n:3*n].copy()
+        xi = pos[0:n]
+        yi = pos[n:2*n]
+        zi = pos[2*n:3*n]
 
         # fractional cell coordinates (clamp to domain boundaries)
         kfloat = np.clip((zi - zmin) / dz, 0.0, nz - 1.0)
