@@ -1,29 +1,7 @@
 import xarray as xr
 import numpy as np
-import scipy
 import defopt
-from scipy.integrate import solve_ivp
-
-
-def writeVTI(data, dx, dy, dz, varname='ftle', filename: str='ftle_1200.vi'):
-    """
-    Write data to a VTI file
-    :param filename: name of the VTI file
-    """
-    import pyvista as pv
-
-    # Create a VTK grid
-    grid = pv.ImageData(dimensions=data.shape)
-
-    # Set spacing
-    grid.spacing = (dz, dy, dx) 
-
-    # Attach data (must be flattened to 1D)
-    grid["ftle"] = data.flatten(order="F")
-    
-    # Save to a .vtk file
-    grid.save(filename)
-
+import pyvista as pv
 
 
 def compute_ftle(ds, time_index, T, imin, imax, jmin, jmax):
@@ -73,8 +51,7 @@ def compute_ftle(ds, time_index, T, imin, imax, jmin, jmax):
     print(f'nx, ny, nz = {nx}, {ny}, {nz}')
     print(f'shape of velocities: {ds.u_xy.shape}')
 
-    # create meshgrid with indexing='xy' so shape is (nz, ny, nx)
-    xx, yy, zz =  np.meshgrid(z, y, x, indexing='ij') # shapes: (nz, ny, nx)
+    zz, yy, xx =  np.meshgrid(z, y, x, indexing='ij') # shapes: (nz, ny, nx)
     print(f'shape of xx: {xx.shape}')
     assert xx.shape[0] == nz
     assert xx.shape[1] == ny
@@ -153,7 +130,7 @@ def compute_ftle(ds, time_index, T, imin, imax, jmin, jmax):
     t1 = float(T)
 
     # choose number of steps
-    nsteps = 10*int(np.max(np.sqrt(uface*uface + vface*vface + wface*wface)) * abs(T) / max(dx, dy, dz)) + 1
+    nsteps = 2*int(np.max(np.sqrt(uface*uface + vface*vface + wface*wface)) * abs(T) / max(dx, dy, dz)) + 1
     print(f'number of RK4 integration steps: {nsteps}')          
     dt = (t1 - t0) / nsteps
 
@@ -250,7 +227,7 @@ def compute_ftle(ds, time_index, T, imin, imax, jmin, jmax):
 
 def main(*, filename: str='small_blf_day_loc1_4m_xy_N04.003.nc', 
     t_start: int=10, t_end: int=11, 
-    T: int=-10, 
+    T: float=-10, 
     imin: int=0, imax: int=-1,
     jmin: int=0, jmax: int=-1):
     """
@@ -270,7 +247,7 @@ def main(*, filename: str='small_blf_day_loc1_4m_xy_N04.003.nc',
 
     dx = (ds.xu[1] - ds.xu[0]).item()
     dy = (ds.yv[1] - ds.yv[0]).item()
-    dz = (ds.zu_xy[1] - ds.zu_xy[0]).item()
+    dz = (ds.zw_xy[1] - ds.zw_xy[0]).item()
 
     print(f'time = {ds.time}')
 
@@ -278,11 +255,16 @@ def main(*, filename: str='small_blf_day_loc1_4m_xy_N04.003.nc',
 
         print(f'time index = {time_index}...')
         ftle = compute_ftle(ds, time_index, T=T, imin=imin, imax=imax, jmin=jmin, jmax=jmax)
+        nz, ny, nx = ftle.shape
 
         print(f'check sum: {np.fabs(ftle).sum()}')
 
-        writeVTI(ftle, dx, dy, dz, varname='ftle', filename=f'ftle_{time_index:04d}.vti')
-
+        # write the data to file
+        grid = pv.ImageData()
+        grid.dimensions = (nx, ny, nz)
+        grid.spacing = (dx, dy, dz)
+        grid.point_data['ftle'] = ftle.flatten(order='C')
+        grid.plot(show_edges=False)
 
 if __name__ == '__main__':
     defopt.run(main)
