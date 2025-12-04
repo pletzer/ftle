@@ -7,3 +7,4 @@ numba
 numbalsoda
 numbacs @ git+https://github.com/alb3rtjarvis/numbacs.git
 pyvista
+dask
