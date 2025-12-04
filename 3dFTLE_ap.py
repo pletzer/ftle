@@ -26,7 +26,7 @@ def writeVTI(data, dx, dy, dz, varname='ftle', filename: str='ftle_1200.vi'):
 
 
 
-def compute_ftle(ds, time_index, T, imin, imax, jmin, jmax, method='RK45', atol=1.e-8, rtol=1.e-8):
+def compute_ftle(ds, time_index, T, imin, imax, jmin, jmax):
     """
     Compute FTLE (finite-time Lyapunov exponent) for a 3D grid of initial points.
 
@@ -47,10 +47,6 @@ def compute_ftle(ds, time_index, T, imin, imax, jmin, jmax, method='RK45', atol=
         Min index in y direction
     jmax : int
         Max index in y direction, jmax > jmin + 1 or negative
-    method : str
-        Integration method for scipy.solve_ivp (e.g. 'RK45','RK23','DOP853','Radau','BDF','LSODA').
-    atol, rtol : float
-        Integrator tolerances.
 
     Returns
     -------
@@ -157,8 +153,8 @@ def compute_ftle(ds, time_index, T, imin, imax, jmin, jmax, method='RK45', atol=
     t1 = float(T)
 
     # choose number of steps
-    # (You may change this — this is a typical default)
-    nsteps = 10 
+    nsteps = 10*int(np.max(np.sqrt(uface*uface + vface*vface + wface*wface)) * abs(T) / max(dx, dy, dz)) + 1
+    print(f'number of RK4 integration steps: {nsteps}')          
     dt = (t1 - t0) / nsteps
 
     y = y0.copy()
