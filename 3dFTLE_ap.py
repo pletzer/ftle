@@ -2,6 +2,7 @@ import xarray as xr
 import numpy as np
 import defopt
 import pyvista as pv
+from numba import njit
 
 
 def compute_ftle(ds, time_index, T, imin, imax, jmin, jmax):
@@ -73,7 +74,7 @@ def compute_ftle(ds, time_index, T, imin, imax, jmin, jmax):
     tendency = np.empty((3*n,), float)
 
     # define RHS: returns flat vector of length 3*n
-    # @njit(fastmath=True)
+    @njit(fastmath=True)
     def vel_fun(t, pos):
         # pos is 3*n vector: [x0...x_{n-1}, y0..., z0...]
         xi = pos[0:n]
