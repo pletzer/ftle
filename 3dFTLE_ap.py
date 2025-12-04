@@ -1,10 +1,9 @@
 import xarray as xr
 import numpy as np
-import matplotlib.pyplot as plt
 import scipy
-
 import defopt
-from pathlib import Path
+from scipy.integrate import solve_ivp
+
 
 def writeVTI(data, dx, dy, dz, varname='ftle', filename: str='ftle_1200.vi'):
     """
@@ -26,8 +25,6 @@ def writeVTI(data, dx, dy, dz, varname='ftle', filename: str='ftle_1200.vi'):
     grid.save(filename)
 
 
-import numpy as np
-from scipy.integrate import solve_ivp
 
 def compute_ftle(ds, time_index, T, imin, imax, jmin, jmax, method='RK45', atol=1.e-8, rtol=1.e-8):
     """
@@ -78,9 +75,14 @@ def compute_ftle(ds, time_index, T, imin, imax, jmin, jmax, method='RK45', atol=
     print(f'dx, dy, dz = {dx}, {dy}, {dz}')
     nx, ny, nz = len(x), len(y), len(z)
     print(f'nx, ny, nz = {nx}, {ny}, {nz}')
+    print(f'shape of velocities: {ds.u_xy.shape}')
 
     # create meshgrid with indexing='xy' so shape is (nz, ny, nx)
-    xx, yy, zz = np.meshgrid(x, y, z, indexing='xy')  # shapes: (nz, ny, nx)
+    xx, yy, zz =  np.meshgrid(z, y, x, indexing='ij') # shapes: (nz, ny, nx)
+    print(f'shape of xx: {xx.shape}')
+    assert xx.shape[0] == nz
+    assert xx.shape[1] == ny
+    assert xx.shape[2] == nx
 
     # flatten initial coordinates into 1D arrays length n = nx * ny * nz
     n = nx * ny * nz
@@ -95,6 +97,7 @@ def compute_ftle(ds, time_index, T, imin, imax, jmin, jmax, method='RK45', atol=
     wface = np.asarray(ds.w_xy[time_index, :, jmin:jmax, imin:imax].fillna(0.0))
 
     # define RHS: returns flat vector of length 3*n
+    # @njit(fastmath=True)
     def vel_fun(t, pos):
         # pos is 3*n vector: [x0...x_{n-1}, y0..., z0...]
         xi = pos[0:n]
@@ -138,18 +141,44 @@ def compute_ftle(ds, time_index, T, imin, imax, jmin, jmax, method='RK45', atol=
     # initial condition: concatenated positions
     y0 = np.concatenate([xflat, yflat, zflat])  # length 3*n
 
-    # integrate over the whole interval [0, T]
-    result = solve_ivp(fun=vel_fun, t_span=(0.0, float(T)), y0=y0,
-                       method=method, atol=atol, rtol=rtol)
+    # # integrate over the whole interval [0, T]
+    # result = solve_ivp(fun=vel_fun, t_span=(0.0, float(T)), y0=y0,
+    #                    method=method, atol=atol, rtol=rtol)
 
-    if not result.success:
-        raise RuntimeError(f"ODE integrator failed: {result.message}")
+    # if not result.success:
+    #     raise RuntimeError(f"ODE integrator failed: {result.message}")
 
-    final_pos = result.y[:, -1]  # length 3*n
+    # final_pos = result.y[:, -1]  # length 3*n
 
-    Xf = final_pos[0:n].reshape((nx, ny, nz))
-    Yf = final_pos[n:2*n].reshape((nx, ny, nz))
-    Zf = final_pos[2*n:3*n].reshape((nx, ny, nz))
+    # ---------------------------------------------
+    # Explicit fixed-step RK4 integrator
+    # ---------------------------------------------
+    t0 = 0.0
+    t1 = float(T)
+
+    # choose number of steps
+    # (You may change this — this is a typical default)
+    nsteps = 10 
+    dt = (t1 - t0) / nsteps
+
+    y = y0.copy()
+    t = t0
+
+    for _ in range(nsteps):
+        k1 = vel_fun(t, y)
+        k2 = vel_fun(t + 0.5*dt, y + 0.5*dt*k1)
+        k3 = vel_fun(t + 0.5*dt, y + 0.5*dt*k2)
+        k4 = vel_fun(t + dt, y + dt*k3)
+
+        y += (dt/6.0)*(k1 + 2*k2 + 2*k3 + k4)
+        t += dt
+
+    final_pos = y  # same shape as y0
+
+
+    Xf = final_pos[0:n].reshape((nz, ny, nx))  #.reshape((nx, ny, nz))
+    Yf = final_pos[n:2*n].reshape((nz, ny, nx))  #.reshape((nx, ny, nz))
+    Zf = final_pos[2*n:3*n].reshape((nz, ny, nx)) #.reshape((nx, ny, nz))
 
     # Preallocate gradient arrays (same shape)
     f11 = np.empty_like(Xf); f12 = np.empty_like(Xf); f13 = np.empty_like(Xf)
@@ -200,7 +229,7 @@ def compute_ftle(ds, time_index, T, imin, imax, jmin, jmax, method='RK45', atol=
     C33 = f13*f13 + f23*f23 + f33*f33
 
     # Build (nx, ny, nz, 3, 3) array and compute eigenvalues
-    C = np.empty((nx, ny, nz, 3, 3), dtype=C11.dtype)
+    C = np.empty((nz, ny, nx, 3, 3), dtype=C11.dtype)
     C[..., 0, 0] = C11
     C[..., 0, 1] = C12
     C[..., 0, 2] = C13
