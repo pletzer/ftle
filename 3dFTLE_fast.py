@@ -428,8 +428,8 @@ def compute_ftle(
 def main(
     *,
     filename: str = "small_blf_day_loc1_4m_xy_N04.003.nc",
-    t_start: int = 10,
-    t_end: int = 11,
+    tmin: int = 0,
+    tmax: int = 1,
     T: float = -10.0,
     imin: int = 0,
     imax: int = -1,
@@ -440,7 +440,7 @@ def main(
 ):
     """
     Compute FTLE on a patch from a PALM NetCDF file.
-    CLI example: python ftle_fast.py --filename data.nc --t_start 0 --t_end 1 --T -10
+    CLI example: python ftle_fast.py --filename data.nc --tmin 0 --tmax 1 --T -10
     """
     ds = xr.open_dataset(filename, engine="netcdf4", decode_timedelta=False)
 
@@ -459,7 +459,7 @@ def main(
         print(f"dataset time coords: {ds.time}")
         print(f"grid spacing dx,dy,dz = {dx},{dy},{dz}")
 
-    for time_index in range(t_start, t_end):
+    for time_index in range(tmin, tmax):
         if verbose:
             print(f"\nComputing FTLE for time_index = {time_index}")
         ftle = compute_ftle(
@@ -473,6 +473,8 @@ def main(
         if verbose:
             print(f"ftle shape (nz,ny,nx) = {ftle.shape}")
             print(f"abs sum = {np.fabs(ftle).sum():.6e}")
+            # check that ftle is non-zero at the lowest elevation
+            print(f'ftle[0,...] = {ftle[0,...]}')
 
         # PyVista expects point data in x-fastest order depending on dims; convert to (nx,ny,nz)
         # Our ftle is (nz,ny,nx) -> transpose to (nx,ny,nz)
@@ -481,6 +483,7 @@ def main(
         grid = pv.ImageData()
         grid.dimensions = (nx, ny, nz)
         grid.spacing = (dx, dy, dz)
+        grid.origin = (ds.xu[imin], ds.yv[jmin], ds.zw_xy[0])
         # pyvista expects point data length = nx*ny*nz
         grid.point_data['ftle'] = ftle_for_output.ravel(order='F')  # Fortran order matches (x,y,z) ordering
         outname = f"ftle_{time_index:05}.vti"
