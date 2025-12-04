@@ -99,11 +99,10 @@ def compute_ftle(ds, time_index, T, imin, imax, jmin, jmax):
         ate = 1.0 - eta
         isx = 1.0 - xsi
 
-        # Interpolate based on your face-centered assumptions:
+        # Interpolation based on face-centered assumptions:
         # u is constant in y,z and linear in x between i0,i1 (shape: (nz-1, ny-1, nx))
         # v is linear in y, etc...
-        # Keep same indexing order as your data arrays — if ds stores arrays with different axis order
-        # you must reorder accordingly. Below I assume uface[k,j,i], consistent with your code.
+        # Assume uface[k,j,i] indexing
 
         ui = uface[k0, j0, i0] * isx + uface[k0, j0, i1] * xsi
         vi = vface[k0, j0, i0] * ate + vface[k0, j1, i0] * eta
@@ -130,7 +129,7 @@ def compute_ftle(ds, time_index, T, imin, imax, jmin, jmax):
     t1 = float(T)
 
     # choose number of steps
-    nsteps = 2*int(np.max(np.sqrt(uface*uface + vface*vface + wface*wface)) * abs(T) / max(dx, dy, dz)) + 1
+    nsteps = 5*int(np.max(np.sqrt(uface*uface + vface*vface + wface*wface)) * abs(T) / max(dx, dy, dz)) + 1
     print(f'number of RK4 integration steps: {nsteps}')          
     dt = (t1 - t0) / nsteps
 
@@ -264,7 +263,8 @@ def main(*, filename: str='small_blf_day_loc1_4m_xy_N04.003.nc',
         grid.dimensions = (nx, ny, nz)
         grid.spacing = (dx, dy, dz)
         grid.point_data['ftle'] = ftle.flatten(order='C')
-        grid.plot(show_edges=False)
+        grid.save(f'ftle_{time_index:05}.vti')
+        #grid.plot(show_edges=False)
 
 if __name__ == '__main__':
     defopt.run(main)
