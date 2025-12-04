@@ -69,6 +69,9 @@ def compute_ftle(ds, time_index, T, imin, imax, jmin, jmax):
     vface = np.asarray(ds.v_xy[time_index, :, jmin:jmax, imin:imax].fillna(0.0))
     wface = np.asarray(ds.w_xy[time_index, :, jmin:jmax, imin:imax].fillna(0.0))
 
+    # preallocate the tendency
+    tendency = np.empty((3*n,), float)
+
     # define RHS: returns flat vector of length 3*n
     # @njit(fastmath=True)
     def vel_fun(t, pos):
@@ -104,11 +107,11 @@ def compute_ftle(ds, time_index, T, imin, imax, jmin, jmax):
         # v is linear in y, etc...
         # Assume uface[k,j,i] indexing
 
-        ui = uface[k0, j0, i0] * isx + uface[k0, j0, i1] * xsi
-        vi = vface[k0, j0, i0] * ate + vface[k0, j1, i0] * eta
-        wi = wface[k0, j0, i0] * tez + wface[k1, j0, i0] * zet
+        tendency[:n] = uface[k0, j0, i0] * isx + uface[k0, j0, i1] * xsi # u
+        tendency[n:2*n] = vface[k0, j0, i0] * ate + vface[k0, j1, i0] * eta # v
+        tendency[2*n: ]= wface[k0, j0, i0] * tez + wface[k1, j0, i0] * zet # w
 
-        return np.concatenate([ui, vi, wi])
+        return tendency
 
     # initial condition: concatenated positions
     y0 = np.concatenate([xflat, yflat, zflat])  # length 3*n
