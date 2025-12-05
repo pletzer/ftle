@@ -18,12 +18,10 @@ import defopt
 import pyvista as pv
 import dask
 from dask import delayed
+from dask.distributed import Client, LocalCluster
 
 from numba import njit
 
-# -------------------------
-# (KEEP your existing helper functions mostly unchanged)
-# -------------------------
 def _prepare_grid_and_faces(
     ds: xr.Dataset,
     time_index: int,
@@ -57,6 +55,7 @@ def _prepare_grid_and_faces(
     zflat = zz.ravel()
 
     # NOTE: ds passed to this function must contain a time dimension of length >= 1
+    # and the second dimension is elevation (z). Replace Nans with zeros.
     uface = np.asarray(ds.u_xy[time_index, :, jmin:jmax, imin:imax].fillna(0.0)).astype(np.float64)
     vface = np.asarray(ds.v_xy[time_index, :, jmin:jmax, imin:imax].fillna(0.0)).astype(np.float64)
     wface = np.asarray(ds.w_xy[time_index, :, jmin:jmax, imin:imax].fillna(0.0)).astype(np.float64)
@@ -255,6 +254,8 @@ def compute_ftle(
     if verbose:
         print(f"Using nsteps = {nsteps} for RK4 integration")
 
+    # Compute the trajectories. NOTE: we're freezing the velocity
+    # in this version
     t0 = 0.0
     t1 = float(T)
 
@@ -271,6 +272,7 @@ def compute_ftle(
     Yf = final_pos[n:2*n].reshape((nz, ny, nx))
     Zf = final_pos[2*n:3*n].reshape((nz, ny, nx))
 
+    # Compute the deformation gradient F
     dXdz, dXdy, dXdx = np.gradient(Xf, dz, dy, dx, edge_order=2)
     dYdz, dYdy, dYdx = np.gradient(Yf, dz, dy, dx, edge_order=2)
     dZdz, dZdy, dZdx = np.gradient(Zf, dz, dy, dx, edge_order=2)
@@ -279,6 +281,7 @@ def compute_ftle(
     f21 = dYdx; f22 = dYdy; f23 = dYdz
     f31 = dZdx; f32 = dZdy; f33 = dZdz
 
+    # Compute the Cauchy-Green tensor F^T . F
     C11 = f11*f11 + f21*f21 + f31*f31
     C12 = f11*f12 + f21*f22 + f31*f32
     C13 = f11*f13 + f21*f23 + f31*f33
@@ -286,6 +289,7 @@ def compute_ftle(
     C23 = f12*f13 + f22*f23 + f32*f33
     C33 = f13*f13 + f23*f23 + f33*f33
 
+    # Compute the eigenvalues of C
     C = np.empty((nz, ny, nx, 3, 3), dtype=C11.dtype)
     C[..., 0, 0] = C11
     C[..., 0, 1] = C12
@@ -333,7 +337,8 @@ def _worker_compute_and_save(
     import numpy as np
     import pyvista as pv
 
-    ds = xr.open_dataset(ds_path, engine="netcdf4", decode_timedelta=False)
+    # engine="netcdf4" fails when reading the file in parallel
+    ds = xr.open_dataset(ds_path, engine="h5netcdf", decode_timedelta=False)
     # keep a time dimension of length 1 so compute_ftle's indexing works:
     ds_t = ds.isel(time=slice(time_index, time_index + 1))
 
@@ -385,8 +390,9 @@ def main(
     jmax: int = -1,
     use_numba: bool = True,
     verbose: bool = False,
-    scheduler: str = "processes",   # 'processes' | 'threads' | 'synchronous'
     outdir: Optional[str] = None,
+    n_workers: int = 1,
+    threads_per_worker: int = 2,
 ):
     """
     Submit FTLE tasks for time indices in [tmin, tmax) to Dask.
@@ -413,8 +419,12 @@ def main(
 
     # Trigger computation in parallel
     if verbose:
-        print(f"Submitting {len(tasks)} tasks to dask scheduler='{scheduler}'")
-    results = dask.compute(*tasks, scheduler=scheduler)
+        print(f"Submitting {len(tasks)} tasks to dask client")
+
+    cluster = LocalCluster(n_workers=n_workers, threads_per_worker=threads_per_worker)
+    client = Client(cluster)
+
+    results = dask.compute(*tasks, scheduler=client)
     if verbose:
         print("Completed tasks. Outputs:")
         for r in results:
