@@ -7,8 +7,8 @@ def getFTLE2d(hx: float, hy: float, Xf: np.ndarray, Yf: np.ndarray, T: float):
     @param hy grid cell size in y 
     @param Xf final x coordinates
     @param Yf final y coordinates
-    @param T time 
-    @return {'ftle': ftle, 'detF': detF}
+    @param T time
+    @return tensor ((f11, f12), (f21, f22))
     """
     
     # allocate deformation gradient
