@@ -35,6 +35,9 @@ import numpy as np
 import netCDF4
 import vtk
 
+from vtkmodules.util import numpy_support
+# from vtk.util import numpy_support for older ParaView 
+
 # -------------------------
 # RK4 step estimate (CFL-like)
 # -------------------------
@@ -192,7 +195,7 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
         # (nz,ny,nx) -> transpose to (nx,ny,nz) which is the VTK layout
         ftle = res['ftle'].transpose((2, 1, 0)).astype(np.float32)
 
-        vtk_array = vtk.util.numpy_support.numpy_to_vtk(
+        vtk_array = numpy_support.numpy_to_vtk(
             num_array=ftle.ravel(order='F'),
             deep=True,
             array_type=vtk.VTK_FLOAT
@@ -214,7 +217,7 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
 
             x = nc.variables['xu'][self.imin:self.imax+1]
             y = nc.variables['yv'][self.jmin:self.jmax+1]
-            z = nc.variables['z_xy'][:]
+            z = nc.variables['zw_xy'][:]
             nx_tot = nc.variables['xu'].size
             ny_tot = nc.variables['yv'].size
             if self.imin < 0 or self.imax >= nx_tot:
@@ -283,7 +286,7 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
                 ate = 1.0 - eta
                 tez = 1.0 - zet
 
-                # Arakawa C mimetic interpolation vector field
+                # Arakawa C mimetic interpolation of vector field
                 # The interpolation is piecewise linear in the direction of the component 
                 # and peicewise constant in the other directions. This interpolation
                 # conserves fluxes and allows one to have obstacles in the domain (e.g 
