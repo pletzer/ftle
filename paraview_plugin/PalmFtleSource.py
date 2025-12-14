@@ -35,8 +35,11 @@ import numpy as np
 import netCDF4
 import vtk
 
-from vtkmodules.util import numpy_support
-# from vtk.util import numpy_support for older ParaView 
+try:
+    # paraview 6.x
+    from vtkmodules.util import numpy_support
+except:
+    from vtk.util import numpy_support
 
 # -------------------------
 # RK4 step estimate (CFL-like)
@@ -48,7 +51,11 @@ def _estimate_nsteps(uface: np.ndarray, vface: np.ndarray, wface: np.ndarray,
     nsteps ~ 4 * (Umax * |T| / hmin)
     with lower bound min_steps.
     """
-    Umax = float(np.sqrt(uface * uface + vface * vface + wface * wface).max())
+    Umax = 0.0
+    try:
+        Umax = float(np.sqrt(uface*uface + vface*vface + wface*wface).max())
+    except:
+        print('Warning: unable to compute Umax')
     if Umax <= 0:
         return min_steps
     hmin = min(dx, dy, dz)
@@ -118,7 +125,7 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
 
         # ---- user parameters (with defaults) ----
         self.palmfile = ""
-        self.tintegr = 1.0
+        self.tintegr = -10.0
         self.imin = 0
         self.imax = 1
         self.jmin = 0
@@ -129,7 +136,7 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
     # Properties exposed to ParaView GUI
     # ------------------------------------------------------------------
 
-    @smproperty.stringvector(name="PalmFile", number_of_elements=1)
+    @smproperty.stringvector(name="PalmFile", number_of_elements=1, default_values=["/Users/apletzer/work/ftle/paraview_plugin/small_blf_day_loc1_4m_xy_N04.003.nc"])
     @smdomain.filelist()
     def SetPalmFile(self, value):
         # ParaView may pass a string or a list
@@ -140,35 +147,36 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
         self.Modified()
 
     # scalar is a one element vector
-    @smproperty.doublevector(name="IntegrationTime", number_of_elements=1, default_values=[1.0])
+    @smproperty.doublevector(name="IntegrationTime", number_of_elements=1, default_values=[-10.0])
     def SetIntegrationTime(self, value, *args):
         self.tintegr = float(value)
         self.Modified()
 
-    @smproperty.intvector(name="IRange", number_of_elements=2, default_values=[0, 1])
-    def SetIRange(self, value, *args):
-        if isinstance(value, (list, tuple)):
-            self.imin, self.imax = map(int, value)
-        else:
-            # single value
-            self.imin = int(value)
-            self.imax = self.imin + 1
-        self.Modified()
-
-    @smproperty.intvector(name="JRange", number_of_elements=2, default_values=[0, 1])
-    def SetJRange(self, value, *args):
-        if isinstance(value, (list, tuple)):
-            self.jmin, self.jmax = map(int, value)
-        else:
-            # single value
-            self.jmin = int(value)
-            self.jmax = self.jmin + 1
-        self.Modified()
-
-    @smproperty.intvector(name="TIndex", number_of_elements=1, default_values=[0])
+    @smproperty.intvector(name="TIndex", number_of_elements=1, default_values=[10])
     def SetTIndex(self, value, *args):
         self.tindex = int(value)
         self.Modified()
+
+    @smproperty.intvector(name="IMin", number_of_elements=1, default_values=[180])
+    def SetIMin(self, value, *args):
+        self.imin = int(value)
+        self.Modified()
+
+    @smproperty.intvector(name="IMax", number_of_elements=1, default_values=[200])
+    def SetIMax(self, value, *args):
+        self.imax = int(value)
+        self.Modified()
+
+    @smproperty.intvector(name="JMin", number_of_elements=1, default_values=[220])
+    def SetJMin(self, value, *args):
+        self.jmin = int(value)
+        self.Modified()
+
+    @smproperty.intvector(name="JMax", number_of_elements=1, default_values=[300])
+    def SetJMax(self, value, *args):
+        self.jmax = int(value)
+        self.Modified()
+
 
     # ------------------------------------------------------------------
     # Core pipeline method
@@ -215,6 +223,7 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
         # --------------------------------------------------------------
         with netCDF4.Dataset(self.palmfile, "r") as nc:
 
+            print(f'self.imin={self.imin} self.imax={self.imax} self.jmin={self.jmin} self.jmax={self.jmax}')
             x = nc.variables['xu'][self.imin:self.imax+1]
             y = nc.variables['yv'][self.jmin:self.jmax+1]
             z = nc.variables['zw_xy'][:]
@@ -245,14 +254,12 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
             zflat = zz.ravel()
 
             # read the velocity, expect shape (time, nz, ny, nx). Note we're reading in one more cell in y and
-            # x, and all the cells in z
-            uface = nc.variables['u_xy'][self.tindex, :, self.jmin:self.jmax+1, self.imin:self.imax+1]
-            vface = nc.variables['v_xy'][self.tindex, :, self.jmin:self.jmax+1, self.imin:self.imax+1]
-            wface = nc.variables['w_xy'][self.tindex, :, self.jmin:self.jmax+1, self.imin:self.imax+1]
-            # replace nans with zeros
-            uface = np.nan_to_num(uface)
-            vface = np.nan_to_num(vface)
-            wface = np.nan_to_num(wface)
+            # x, and all the cells in z. Replace all the nans with zeros
+            uface = np.nan_to_num( nc.variables['u_xy'][self.tindex, :, self.jmin:self.jmax+1, self.imin:self.imax+1], copy=False, nan=0.0)
+            vface = np.nan_to_num( nc.variables['v_xy'][self.tindex, :, self.jmin:self.jmax+1, self.imin:self.imax+1], copy=False, nan=0.0)
+            wface = np.nan_to_num( nc.variables['w_xy'][self.tindex, :, self.jmin:self.jmax+1, self.imin:self.imax+1], copy=False, nan=0.0)
+            print(f'nx1={nx1} ny1={ny1} nz1={nz1}')
+            print(f'uface.shape={uface.shape}\nvface={vface.shape}\nwface={wface.shape}')
 
             # total number of grid points
             n = len(xflat)
@@ -331,6 +338,7 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
             Xf = final_pos[0:n].reshape((nz1, ny1, nx1))
             Yf = final_pos[n:2*n].reshape((nz1, ny1, nx1))
             Zf = final_pos[2*n:3*n].reshape((nz1, ny1, nx1))
+            #print(f'Xf={Xf}\nYf={Yf}\nZf={Zf}')
 
             # Compute the deformation gradient F at cell centres
             f11, f12, f13 = _gradient_corner_to_center(Xf, dx, dy, dz)
