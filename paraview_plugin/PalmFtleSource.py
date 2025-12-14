@@ -211,6 +211,11 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
             x = nc.variables['xu'][self.imin:self.imax+1]
             y = nc.variables['yv'][self.jmin:self.jmax+1]
             z = nc.variables['z_xy'][:]
+            if self.imin < 0 or self.imax >= x.size:
+                raise ValueError("Invalid IRange")
+            if self.jmin < 0 or self.jmax >= y.size:
+                raise ValueError("Invalid JRange")
+
             xmin = x[0]
             ymin = y[0]
             zmin = z[0]
@@ -345,7 +350,8 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
 
             C_flat = C.reshape(-1, 3, 3)
             eigvals = np.linalg.eigvalsh(C_flat)
-            max_lambda = eigvals[:, -1].reshape((nz, ny, nx))
+            # Note: the eigenvalues are cell centred (nz, ny, nx)
+            max_lambda = np.maximum(eigvals[:, -1], 1.e-16).reshape((nz, ny, nx))
 
             ftle = np.log(max_lambda) / (2.0 * abs(float(self.tintegr)))
         
