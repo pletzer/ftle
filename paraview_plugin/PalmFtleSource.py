@@ -129,7 +129,11 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
     @smproperty.stringvector(name="PalmFile", number_of_elements=1)
     @smdomain.filelist()
     def SetPalmFile(self, value):
-        self.palmfile = value[0]
+        # ParaView may pass a string or a list
+        if isinstance(value, (list, tuple)):
+            self.palmfile = value[0] if value else ""
+        else:
+            self.palmfile = value
         self.Modified()
 
     # scalar is a one element vector
@@ -211,9 +215,11 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
             x = nc.variables['xu'][self.imin:self.imax+1]
             y = nc.variables['yv'][self.jmin:self.jmax+1]
             z = nc.variables['z_xy'][:]
-            if self.imin < 0 or self.imax >= x.size:
+            nx_tot = nc.variables['xu'].size
+            ny_tot = nc.variables['yv'].size
+            if self.imin < 0 or self.imax >= nx_tot:
                 raise ValueError("Invalid IRange")
-            if self.jmin < 0 or self.jmax >= y.size:
+            if self.jmin < 0 or self.jmax >= ny_tot:
                 raise ValueError("Invalid JRange")
 
             xmin = x[0]
@@ -342,6 +348,7 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
                     [C12, C22, C23],
                     [C13, C23, C33]
                 ], axis=-1).reshape(-1, 3, 3)
+            )
 
             # Note: the eigenvalues are cell centred (nz, ny, nx)
             max_lambda = np.maximum(eigvals[:, -1], 1.e-16).reshape((nz, ny, nx))
