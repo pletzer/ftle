@@ -330,6 +330,7 @@ def compute_ftle(
     C33 = f13*f13 + f23*f23 + f33*f33
 
     # Compute the eigenvalues of C
+    # nx, ny, nz are the number of points
     C = np.empty((nz-1, ny-1, nx-1, 3, 3), dtype=C11.dtype)
     C[..., 0, 0] = C11
     C[..., 0, 1] = C12
