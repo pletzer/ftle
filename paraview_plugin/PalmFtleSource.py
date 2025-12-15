@@ -33,7 +33,7 @@ Grid:
 from paraview.util.vtkAlgorithm import *
 import numpy as np
 import netCDF4
-import vtk
+import vtk 
 
 try:
     # paraview 6.x
@@ -51,13 +51,8 @@ def _estimate_nsteps(uface: np.ndarray, vface: np.ndarray, wface: np.ndarray,
     nsteps ~ 4 * (Umax * |T| / hmin)
     with lower bound min_steps.
     """
-    Umax = 0.0
-    try:
-        Umax = float(np.sqrt(uface*uface + vface*vface + wface*wface).max())
-    except:
-        print('Warning: unable to compute Umax')
-    if Umax <= 0:
-        return min_steps
+    usquare  = np.maximum(uface*uface + vface*vface + wface*wface, 1.e-10).max()
+    Umax = np.sqrt(usquare)
     hmin = min(dx, dy, dz)
     crossings = Umax * abs(T) / hmin
     nsteps = max(int(4.0 * crossings) + 1, min_steps)
@@ -196,22 +191,26 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
         # build the grid
         output = vtk.vtkImageData.GetData(outInfo, 0)
         # number of nodes in x, y and z
-        output.SetDimensions(nx1, ny1, nz1)
+        #output.SetDimensions(nx1, ny1, nz1)
+        output.SetExtents(nx1 - 1, ny1 - 1, nz1 - 1)
         output.SetOrigin(xmin, ymin, zmin)
         output.SetSpacing(dx, dy, dz)  # uniform grid assumed
 
         # (nz,ny,nx) -> transpose to (nx,ny,nz) which is the VTK layout
-        ftle = res['ftle'].transpose((2, 1, 0)).astype(np.float32)
+        #ftle = res['ftle'].transpose((2, 1, 0)).astype(np.float32)
+        ftle = res['ftle'].astype(np.float32)
+        print(f'ftle = {ftle}')
 
-        vtk_array = numpy_support.numpy_to_vtk(
+        self.vtk_array = numpy_support.numpy_to_vtk(
             num_array=ftle.ravel(order='F'),
             deep=True,
             array_type=vtk.VTK_FLOAT
         )
-        vtk_array.SetName("FTLE")
+        self.vtk_array.SetName("FTLE")
 
-        output.GetCellData().AddArray(vtk_array)
-        output.GetCellData().SetScalars(vtk_array)
+        output.GetCellData().AddArray(self.vtk_array)
+        output.GetCellData().SetScalars(self.vtk_array)
+        print(f'nx1 = {nx1} ny1 = {ny1} nz1 = {nz1} ftle.shape = {ftle.shape} dx = {dx} dy = {dy} dz = {dz}')
 
         return 1
     
