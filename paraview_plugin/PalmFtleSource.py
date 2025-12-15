@@ -33,7 +33,8 @@ Grid:
 from paraview.util.vtkAlgorithm import *
 import numpy as np
 import netCDF4
-import vtk 
+from vtkmodules.vtkCommonDataModel import vtkImageData, vtkMultiBlockDataSet
+import vtk
 
 try:
     # paraview 6.x
@@ -58,7 +59,9 @@ def _estimate_nsteps(uface: np.ndarray, vface: np.ndarray, wface: np.ndarray,
     nsteps = max(int(4.0 * crossings) + 1, min_steps)
     return nsteps
 
-
+# -------------------------------------
+# Cell centred gradient from point data
+# -------------------------------------
 def _gradient_corner_to_center(Xf, dx, dy, dz):
     """
     Cell-cantered gradients for a field defined at cell corners.
@@ -103,19 +106,14 @@ def _gradient_corner_to_center(Xf, dx, dy, dz):
 @smproxy.source(
     name="PalmFtleSource",
     label="PALM FTLE Source",
-    category="FTLE"
 )
-@smproperty.xml("""
-<SourceProxy>
-  <OutputPort name="Output"/>
-</SourceProxy>
-""")
 class PalmFtleSource(VTKPythonAlgorithmBase):
+
     def __init__(self):
         VTKPythonAlgorithmBase.__init__(self,
             nInputPorts=0,
             nOutputPorts=1,
-            outputType='vtkImageData'
+            outputType='vtkMultiBlockDataSet' # vtkImageData cannot be used because it needs the extent known ahead of time
         )
 
         # ---- user parameters (with defaults) ----
@@ -133,6 +131,7 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
 
     @smproperty.stringvector(name="PalmFile", number_of_elements=1, default_values=["/Users/apletzer/work/ftle/paraview_plugin/small_blf_day_loc1_4m_xy_N04.003.nc"])
     @smdomain.filelist()
+    @smhint.filechooser(extensions="nc", file_description="NetCDF files")
     def SetPalmFile(self, value):
         # ParaView may pass a string or a list
         if isinstance(value, (list, tuple)):
@@ -178,42 +177,49 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
     # ------------------------------------------------------------------
 
     def RequestData(self, request, inInfo, outInfo):
+
         if not self.palmfile:
             raise RuntimeError("PalmFile must be specified")
-        
+
         res = self._compute_ftle()
 
-        # number of nodes in each direction
+        # Node counts
         nx1, ny1, nz1 = res['nx1'], res['ny1'], res['nz1']
         xmin, ymin, zmin = res['xmin'], res['ymin'], res['zmin']
-        dx, dy, dz = res['dx'], res['dy'], res['dz']
+        dx, dy, dz = res['dx'], res['dy'], res['dz']  # all 4.0 per your print
 
-        # build the grid
-        output = vtk.vtkImageData.GetData(outInfo, 0)
-        # number of nodes in x, y and z
-        #output.SetDimensions(nx1, ny1, nz1)
-        output.SetExtents(nx1 - 1, ny1 - 1, nz1 - 1)
-        output.SetOrigin(xmin, ymin, zmin)
-        output.SetSpacing(dx, dy, dz)  # uniform grid assumed
+        # Build image
+        image = vtkImageData()
+        image.SetExtent(0, nx1 - 1, 0, ny1 - 1, 0, nz1 - 1)
+        image.SetOrigin(xmin, ymin, zmin)
+        image.SetSpacing(dx, dy, dz)
 
-        # (nz,ny,nx) -> transpose to (nx,ny,nz) which is the VTK layout
-        #ftle = res['ftle'].transpose((2, 1, 0)).astype(np.float32)
-        ftle = res['ftle'].astype(np.float32)
-        print(f'ftle = {ftle}')
+        # ---- FTLE is cell-centered and currently in (z, y, x) = (17, 80, 20) ----
+        # Convert to (x, y, z) = (20, 80, 17)
+        ftle_xyz = res['ftle'].transpose((2, 1, 0)).astype(np.float32)  # (nx-1, ny-1, nz-1)
 
-        self.vtk_array = numpy_support.numpy_to_vtk(
-            num_array=ftle.ravel(order='F'),
+        vtk_arr = numpy_support.numpy_to_vtk(
+            num_array=ftle_xyz.ravel(order='F'),   # x fastest, then y, then z
             deep=True,
             array_type=vtk.VTK_FLOAT
         )
-        self.vtk_array.SetName("FTLE")
+        vtk_arr.SetName("FTLE")
 
-        output.GetCellData().AddArray(self.vtk_array)
-        output.GetCellData().SetScalars(self.vtk_array)
-        print(f'nx1 = {nx1} ny1 = {ny1} nz1 = {nz1} ftle.shape = {ftle.shape} dx = {dx} dy = {dy} dz = {dz}')
+        cd = image.GetCellData()
+        cd.AddArray(vtk_arr)
+        cd.SetScalars(vtk_arr)  # make FTLE the active cell scalar
 
+        # Diagnostics
+        print(f"Extent: x=[0,{nx1-1}] y=[0,{ny1-1}] z=[0,{nz1-1}]")
+        print(f"Cells expected: {(nx1-1)*(ny1-1)*(nz1-1)}  FTLE tuples: {ftle_xyz.size}")
+        print(f"FTLE min/max: {np.nanmin(ftle_xyz):.6g} / {np.nanmax(ftle_xyz):.6g}")
+
+        # 3. Put it in the multi-block output
+        output = vtkMultiBlockDataSet.GetData(outInfo, 0)
+        output.SetBlock(0, image)
+ 
         return 1
-    
+   
 
     def _compute_ftle(self) -> dict:
 
