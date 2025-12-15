@@ -197,6 +197,7 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
         # ---- FTLE is cell-centered and currently in (z, y, x) = (17, 80, 20) ----
         # Convert to (x, y, z) = (20, 80, 17)
         ftle_xyz = res['ftle'].transpose((2, 1, 0)).astype(np.float32)  # (nx-1, ny-1, nz-1)
+        #ftle_xyz = res['ftle'].astype(np.float32)
 
         vtk_arr = numpy_support.numpy_to_vtk(
             num_array=ftle_xyz.ravel(order='F'),   # x fastest, then y, then z
@@ -212,7 +213,7 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
         # Diagnostics
         print(f"Extent: x=[0,{nx1-1}] y=[0,{ny1-1}] z=[0,{nz1-1}]")
         print(f"Cells expected: {(nx1-1)*(ny1-1)*(nz1-1)}  FTLE tuples: {ftle_xyz.size}")
-        print(f"FTLE min/max: {np.nanmin(ftle_xyz):.6g} / {np.nanmax(ftle_xyz):.6g}")
+        print(f"FTLE min/max: {np.nanmin(ftle_xyz):.6g} / {np.nanmax(ftle_xyz):.6g} shape: {ftle_xyz.shape}")
 
         # 3. Put it in the multi-block output
         output = vtkMultiBlockDataSet.GetData(outInfo, 0)
