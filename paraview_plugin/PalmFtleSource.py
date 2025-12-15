@@ -359,13 +359,18 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
             C23 = f12*f13 + f22*f23 + f32*f33
             C33 = f13*f13 + f23*f23 + f33*f33
 
-            eigvals = np.linalg.eigvalsh(
-                np.stack([
-                    [C11, C12, C13],
-                    [C12, C22, C23],
-                    [C13, C23, C33]
-                ], axis=-1).reshape(-1, 3, 3)
-            )
+            C = np.empty((nz, ny, nx, 3, 3), dtype=C11.dtype)
+            C[..., 0, 0] = C11
+            C[..., 0, 1] = C12
+            C[..., 0, 2] = C13
+            C[..., 1, 0] = C12
+            C[..., 1, 1] = C22
+            C[..., 1, 2] = C23
+            C[..., 2, 0] = C13
+            C[..., 2, 1] = C23
+            C[..., 2, 2] = C33
+            C_flat = C.reshape(-1, 3, 3)
+            eigvals = np.linalg.eigvalsh(C_flat)
 
             # Note: the eigenvalues are cell centred (nz, ny, nx)
             max_lambda = np.maximum(eigvals[:, -1], 1.e-16).reshape((nz, ny, nx))
