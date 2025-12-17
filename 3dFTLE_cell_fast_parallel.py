@@ -69,44 +69,6 @@ def _prepare_grid_and_faces(
         uface=uface, vface=vface, wface=wface
     )
 
-def vel_fun_vectorized(
-    pos: np.ndarray,
-    n: int,
-    xmin: float, ymin: float, zmin: float,
-    dx: float, dy: float, dz: float,
-    nx: int, ny: int, nz: int,
-    uface: np.ndarray, vface: np.ndarray, wface: np.ndarray,
-) -> np.ndarray:
-    xi = pos[0:n]
-    yi = pos[n:2*n]
-    zi = pos[2*n:3*n]
-
-    ifloat = (xi - xmin) / dx
-    jfloat = (yi - ymin) / dy
-    kfloat = (zi - zmin) / dz
-
-    ifloat = np.clip(ifloat, 0.0, nx - 1.0)
-    jfloat = np.clip(jfloat, 0.0, ny - 1.0)
-    kfloat = np.clip(kfloat, 0.0, nz - 1.0)
-
-    i0 = np.clip(np.floor(ifloat).astype(np.int64), 0, nx - 2)
-    j0 = np.clip(np.floor(jfloat).astype(np.int64), 0, ny - 2)
-    k0 = np.clip(np.floor(kfloat).astype(np.int64), 0, nz - 2)
-
-    xsi = ifloat - i0
-    eta = jfloat - j0
-    zet = kfloat - k0
-
-    isx = 1.0 - xsi
-    ate = 1.0 - eta
-    tez = 1.0 - zet
-
-    ui = uface[k0, j0, i0] * isx + uface[k0, j0, i0 + 1] * xsi
-    vi = vface[k0, j0, i0] * ate + vface[k0, j0 + 1, i0] * eta
-    wi = wface[k0, j0, i0] * tez + wface[k0 + 1, j0, i0] * zet
-
-    return np.concatenate([ui, vi, wi])
-
 # Numba helpers (kept top-level)
 @njit(cache=True)
 def _vel_fun_numba(
