@@ -237,7 +237,7 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
         
         # Make sure the time indices are within bounds
         tmin = max(tmin, 0)
-        tmax = min(tmax, nt - 1)
+        tmax = min(tmax, nt)
         print(f'self.time_index = {self.time_index} dt = {dt} nt = {nt} tmin = {tmin} tmax = {tmax}')
 
         # min/max indices
@@ -253,8 +253,13 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
         t_axis_max = np.maximum(t_axis)
         dt = t_axis[1] - t_axis[0] # assume uniform
         nt = t_axis.shape[0]
-        t_index = np.clip( int(np.floor((time_val - t_axis_min) / dt)), nt - 2)
+
+        t_index = int(np.floor((time_val - t_axis_min) / dt))
+        t_index = np.clip(t_index, 0, nt - 2)
+
         mu = (time_val - t_axis[t_index])/dt
+        mu = np.clip(mu, 0.0, 1.0)
+
         return (t_index, mu)
 
 
@@ -269,6 +274,7 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
             x = nc.variables['xu'][self.imin:self.imax+1]
             y = nc.variables['yv'][self.jmin:self.jmax+1]
             z = nc.variables['zw_xy'][:]
+            # assert np.allclose(np.diff(z), dz)
             dt = nc.variables['time'][1] - nc.variables['time'][0] # assume constant time step
             nt_all = nc.variables['time'].size
 
@@ -289,7 +295,7 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
             # assume uniform grid
             dx = x[1] - x[0]
             dy = y[1] - y[0]
-            dz = z[1] - z[0]
+            dz = z[1] - z[0] # assuming constant vertical deltas, which is WRONG at the higher levels!!!!!
             nx1 = len(x)
             ny1 = len(y)
             nz1 = len(z)
@@ -336,7 +342,7 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
                 # parametric coordinates of the cell: 0 <= xsi, eta, zet <= 1
                 xsi = ifloat - i0
                 eta = jfloat - j0
-                zet = kfloat - k0
+                zet = (zi - z[k0]) / (z[k0+1] - z[k0]) # kfloat - k0
 
                 isx = 1.0 - xsi
                 ate = 1.0 - eta
@@ -388,7 +394,7 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
             tmp = np.empty_like(y)
 
             time_base = t_axis[self.time_index]
-            delta_time = (self.tintegr - time_base)/nsteps
+            delta_time = self.tintegr / nsteps
 
             for step in range(nsteps):
 
