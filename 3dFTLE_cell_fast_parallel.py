@@ -54,19 +54,12 @@ def _prepare_grid_and_faces(
     yflat = yy.ravel()
     zflat = zz.ravel()
 
-    # NOTE: ds passed to this function must contain a time dimension of length >= 1
-    # and the second dimension is elevation (z). Replace Nans with zeros.
-    uface = np.asarray(ds.u_xy[time_index, :, jmin:jmax, imin:imax].fillna(0.0)).astype(np.float64)
-    vface = np.asarray(ds.v_xy[time_index, :, jmin:jmax, imin:imax].fillna(0.0)).astype(np.float64)
-    wface = np.asarray(ds.w_xy[time_index, :, jmin:jmax, imin:imax].fillna(0.0)).astype(np.float64)
-
     return dict(
         nx=nx, ny=ny, nz=nz, n=n,
         xmin=xmin, ymin=ymin, zmin=zmin,
         dx=dx, dy=dy, dz=dz,
         x=x, y=y, z=z,
         xflat=xflat, yflat=yflat, zflat=zflat,
-        uface=uface, vface=vface, wface=wface
     )
 
 # Numba helpers (kept top-level)
@@ -229,8 +222,13 @@ def compute_ftle(
     nx = G['nx']; ny = G['ny']; nz = G['nz']; n = G['n']
     xmin = G['xmin']; ymin = G['ymin']; zmin = G['zmin']
     dx = G['dx']; dy = G['dy']; dz = G['dz']
-    uface = G['uface']; vface = G['vface']; wface = G['wface']
     xflat = G['xflat']; yflat = G['yflat']; zflat = G['zflat']
+
+    # NOTE: ds passed to this function must contain a time dimension of length >= 1
+    # and the second dimension is elevation (z). Replace Nans with zeros.
+    uface = np.asarray(ds.u_xy[time_index, :, jmin:jmax, imin:imax].fillna(0.0)).astype(np.float64)
+    vface = np.asarray(ds.v_xy[time_index, :, jmin:jmax, imin:imax].fillna(0.0)).astype(np.float64)
+    wface = np.asarray(ds.w_xy[time_index, :, jmin:jmax, imin:imax].fillna(0.0)).astype(np.float64)
 
     if verbose:
         print(f"nx,ny,nz = {nx},{ny},{nz}, npoints = {n}")
