@@ -1,6 +1,7 @@
 """
 Custom ParaView Python Source plugin to read and compute the Finite Time Lyapunov Exponent 
-from PALM data stored in a NetCDF file
+from PALM data stored in a NetCDF file. This version allows the velocity field to vary in time
+as the grid positions are integrated. 
 
 Inputs:
   - palmfile: path to a NetCDF file
@@ -52,8 +53,7 @@ def _estimate_nsteps(uface: np.ndarray, vface: np.ndarray, wface: np.ndarray,
     nsteps ~ 4 * (Umax * |T| / hmin)
     with lower bound min_steps.
     """
-    usquare  = np.maximum(uface*uface + vface*vface + wface*wface, 1.e-10).max()
-    Umax = np.sqrt(usquare)
+    Umax = np.max(np.sqrt(np.max(uface**2 + vface**2 + wface**2, axis=0)))
     hmin = min(dx, dy, dz)
     crossings = Umax * abs(T) / hmin
     nsteps = max(int(4.0 * crossings) + 1, min_steps)
@@ -123,7 +123,7 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
         self.imax = 1
         self.jmin = 0
         self.jmax = 1
-        self.tindex = 0
+        self.time_index = 0
 
     # ------------------------------------------------------------------
     # Properties exposed to ParaView GUI
@@ -148,7 +148,7 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
 
     @smproperty.intvector(name="TIndex", number_of_elements=1, default_values=[10])
     def SetTIndex(self, value, *args):
-        self.tindex = int(value)
+        self.time_index = int(value)
         self.Modified()
 
     @smproperty.intvector(name="IMin", number_of_elements=1, default_values=[180])
@@ -245,12 +245,16 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
 
 
     def get_lower_time_index_and_param_coord(self, time_val: float, t_axis: np.ndarray) -> tuple:
+        # --------------------------------------------------------------
+        # Get the time index and time interval parametric coordinate from the time value
+        # --------------------------------------------------------------
+
         t_axis_min = np.minimum(t_axis)
         t_axis_max = np.maximum(t_axis)
         dt = t_axis[1] - t_axis[0] # assume uniform
         nt = t_axis.shape[0]
-        t_index = int(np.floor((time_val - t_axis_min) / dt))
-        mu = time_val - t_axis[t_index]
+        t_index = np.clip( int(np.floor((time_val - t_axis_min) / dt)), nt - 2)
+        mu = (time_val - t_axis[t_index])/dt
         return (t_index, mu)
 
 
@@ -266,10 +270,11 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
             y = nc.variables['yv'][self.jmin:self.jmax+1]
             z = nc.variables['zw_xy'][:]
             dt = nc.variables['time'][1] - nc.variables['time'][0] # assume constant time step
-            nt = nc.variables['time'].size
+            nt_all = nc.variables['time'].size
 
-            tmin, tmax = self.select_time_window(dt, nt)
+            tmin, tmax = self.select_time_window(dt, nt_all) # tmin and tmax are indices
             t_axis = nc.variables['time'][tmin:tmax]
+            nt = t_axis.shape[0]
 
             nx_tot = nc.variables['xu'].size
             ny_tot = nc.variables['yv'].size
@@ -348,17 +353,18 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
                 if time_index0 == nt -1:
                     time_index0 = nt - 2
                     mu = 0.0
+                time_index1 = time_index0 + 1
 
 
                 # u: linear in x between i0 and i0+1 at the same (k0,j0)
-                u0 = uface[time_index0, k0, j0, i0] * isx + uface[k0, j0, i0 + 1] * xsi
-                u1 = uface[time_index1, k0, j0, i0] * isx + uface[k0, j0, i0 + 1] * xsi
+                u0 = uface[time_index0, k0, j0, i0] * isx + uface[time_index0, k0, j0, i0 + 1] * xsi
+                u1 = uface[time_index1, k0, j0, i0] * isx + uface[time_index1, k0, j0, i0 + 1] * xsi
                 # vi: linear in y between j0 and j0+1 at same (k0,i0)
-                v0 = vface[time_index0, k0, j0, i0] * ate + vface[k0, j0 + 1, i0] * eta
-                v1 = vface[time_index1, k0, j0, i0] * ate + vface[k0, j0 + 1, i0] * eta
+                v0 = vface[time_index0, k0, j0, i0] * ate + vface[time_index0, k0, j0 + 1, i0] * eta
+                v1 = vface[time_index1, k0, j0, i0] * ate + vface[time_index1, k0, j0 + 1, i0] * eta
                 # wi: linear in z between k0 and k0+1 at same (j0,i0)
-                w0 = wface[time_index0, k0, j0, i0] * tez + wface[k0 + 1, j0, i0] * zet
-                w1 = wface[time_index1, k0, j0, i0] * tez + wface[k0 + 1, j0, i0] * zet
+                w0 = wface[time_index0, k0, j0, i0] * tez + wface[time_index0, k0 + 1, j0, i0] * zet
+                w1 = wface[time_index1, k0, j0, i0] * tez + wface[time_index1, k0 + 1, j0, i0] * zet
 
                 # time interpolation
                 um = 1.0 - mu
@@ -375,7 +381,6 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
 
             # Runge-Kutta 4
             y = y0.copy()
-            dt = self.tintegr / nsteps
             k1 = np.empty_like(y)
             k2 = np.empty_like(y)
             k3 = np.empty_like(y)
@@ -387,7 +392,7 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
 
             for step in range(nsteps):
 
-                time_val = time_base + step*delta_time
+                time_val = time_base + step * delta_time
 
                 k1[:] = velocity_fun(time_val, y)
 
@@ -396,13 +401,13 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
                 k2[:] = velocity_fun(time_val, tmp)
 
                 tmp[:] = y + 0.5 * delta_time * k2
-                k3[:] = velocity_fun(tmp)
+                k3[:] = velocity_fun(time_val, tmp)
 
                 time_val += 0.5*delta_time
                 tmp[:] = y + delta_time * k3
                 k4[:] = velocity_fun(time_val, tmp)
 
-                y += (dt / 6.0) * (k1 + 2.0 * k2 + 2.0 * k3 + k4)
+                y += (delta_time / 6.0) * (k1 + 2.0 * k2 + 2.0 * k3 + k4)
             
             final_pos = y
 
