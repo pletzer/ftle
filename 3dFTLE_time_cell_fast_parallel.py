@@ -60,12 +60,31 @@ def _prepare_grid_and_faces(
     vface = np.asarray(ds.v_xy[time_index, :, jmin:jmax, imin:imax].fillna(0.0)).astype(np.float64)
     wface = np.asarray(ds.w_xy[time_index, :, jmin:jmax, imin:imax].fillna(0.0)).astype(np.float64)
 
+    ifloat = (xflat - xmin) / dx
+    jfloat = (yflat - ymin) / dy
+    kfloat = (zflat - zmin) / dz
+
+    i0 = np.floor(ifloat).astype(np.int64)
+    j0 = np.floor(jfloat).astype(np.int64)
+    k0 = np.floor(kfloat).astype(np.int64)
+
+    i0 = np.clip(i0, 0, nx - 2)
+    j0 = np.clip(j0, 0, ny - 2)
+    k0 = np.clip(k0, 0, nz - 2)
+
+    xsi_grid = (ifloat - i0).astype(np.float64)
+    eta_grid = (jfloat - j0).astype(np.float64)
+    zet_grid = (kfloat - k0).astype(np.float64)
+
     return dict(
         nx=nx, ny=ny, nz=nz, n=n,
         xmin=xmin, ymin=ymin, zmin=zmin,
         dx=dx, dy=dy, dz=dz,
         x=x, y=y, z=z,
+        xx=xx, yy=yy, zz=zz,
         xflat=xflat, yflat=yflat, zflat=zflat,
+        i0=i0, j0=j0, k0=k0,
+        xsi_grid=xsi_grid, eta_grid=eta_grid, zet_grid=zet_grid,
         uface=uface, vface=vface, wface=wface
     )
 
