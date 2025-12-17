@@ -221,38 +221,6 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
  
         return 1
    
-    def select_time_window(self, dt: float, nt: int) -> tuple:
-        # --------------------------------------------------------------
-        # Select the time window to read data from
-        # --------------------------------------------------------------
-        tmin = self.time_index
-        tmax = self.time_index + 1
-        di = int( np.ceil(self.tintegr/dt) )
-        if self.tintegr < 0:
-            tmin -= di
-        elif self.tintegr > 0:
-            tmax += di
-        else:
-            raise ValueError("tintegr cannot be zero!")
-        
-        # Make sure the time indices are within bounds
-        tmin = max(tmin, 0)
-        tmax = min(tmax, nt - 1)
-        print(f'self.time_index = {self.time_index} dt = {dt} nt = {nt} tmin = {tmin} tmax = {tmax}')
-
-        # min/max indices
-        return tmin, tmax
-
-
-    def get_lower_time_index_and_param_coord(self, time_val: float, t_axis: np.ndarray) -> tuple:
-        t_axis_min = np.minimum(t_axis)
-        t_axis_max = np.maximum(t_axis)
-        dt = t_axis[1] - t_axis[0] # assume uniform
-        nt = t_axis.shape[0]
-        t_index = int(np.floor((time_val - t_axis_min) / dt))
-        mu = time_val - t_axis[t_index]
-        return (t_index, mu)
-
 
     def _compute_ftle(self) -> dict:
 
@@ -265,12 +233,6 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
             x = nc.variables['xu'][self.imin:self.imax+1]
             y = nc.variables['yv'][self.jmin:self.jmax+1]
             z = nc.variables['zw_xy'][:]
-            dt = nc.variables['time'][1] - nc.variables['time'][0] # assume constant time step
-            nt = nc.variables['time'].size
-
-            tmin, tmax = self.select_time_window(dt, nt)
-            t_axis = nc.variables['time'][tmin:tmax]
-
             nx_tot = nc.variables['xu'].size
             ny_tot = nc.variables['yv'].size
             if self.imin < 0 or self.imax >= nx_tot:
@@ -298,17 +260,17 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
             zflat = zz.ravel()
 
             # read the velocity, expect shape (time, nz, ny, nx). Note we're reading in one more cell in y and
-            # x, and all the cells in z. We're also replacing all the nans with zeros
-            uface = np.nan_to_num( nc.variables['u_xy'][tmin:tmax, :, self.jmin:self.jmax+1, self.imin:self.imax+1], copy=False, nan=0.0)
-            vface = np.nan_to_num( nc.variables['v_xy'][tmin:tmax, :, self.jmin:self.jmax+1, self.imin:self.imax+1], copy=False, nan=0.0)
-            wface = np.nan_to_num( nc.variables['w_xy'][tmin:tmax, :, self.jmin:self.jmax+1, self.imin:self.imax+1], copy=False, nan=0.0)
+            # x, and all the cells in z. Replace all the nans with zeros
+            uface = np.nan_to_num( nc.variables['u_xy'][self.tindex, :, self.jmin:self.jmax+1, self.imin:self.imax+1], copy=False, nan=0.0)
+            vface = np.nan_to_num( nc.variables['v_xy'][self.tindex, :, self.jmin:self.jmax+1, self.imin:self.imax+1], copy=False, nan=0.0)
+            wface = np.nan_to_num( nc.variables['w_xy'][self.tindex, :, self.jmin:self.jmax+1, self.imin:self.imax+1], copy=False, nan=0.0)
             print(f'nx1={nx1} ny1={ny1} nz1={nz1}')
             print(f'uface.shape={uface.shape}\nvface={vface.shape}\nwface={wface.shape}')
 
             # total number of grid points
             n = len(xflat)
 
-            def velocity_fun(time_val: float, pos: np.ndarray) -> np.ndarray:
+            def velocity_fun(pos: np.ndarray) -> np.ndarray:
                 """
                 Velocity interpolated at pos
                 pos: length 3*n vector [x..., y..., z...]
@@ -339,32 +301,16 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
 
                 # Arakawa C mimetic interpolation of vector field
                 # The interpolation is piecewise linear in the direction of the component 
-                # and piecewise constant in the other directions. This interpolation
+                # and peicewise constant in the other directions. This interpolation
                 # conserves fluxes and allows one to have obstacles in the domain (e.g 
                 # buildings)
 
-                time_index0, mu = self.get_lower_time_index_and_param_coord(time_val=time_val, t_axis=t_axis)
-                # must be well inside
-                if time_index0 == nt -1:
-                    time_index0 = nt - 2
-                    mu = 0.0
-
-
-                # u: linear in x between i0 and i0+1 at the same (k0,j0)
-                u0 = uface[time_index0, k0, j0, i0] * isx + uface[k0, j0, i0 + 1] * xsi
-                u1 = uface[time_index1, k0, j0, i0] * isx + uface[k0, j0, i0 + 1] * xsi
+                # ui: linear in x between i0 and i0+1 at the same (k0,j0)
+                ui = uface[k0, j0, i0] * isx + uface[k0, j0, i0 + 1] * xsi
                 # vi: linear in y between j0 and j0+1 at same (k0,i0)
-                v0 = vface[time_index0, k0, j0, i0] * ate + vface[k0, j0 + 1, i0] * eta
-                v1 = vface[time_index1, k0, j0, i0] * ate + vface[k0, j0 + 1, i0] * eta
+                vi = vface[k0, j0, i0] * ate + vface[k0, j0 + 1, i0] * eta
                 # wi: linear in z between k0 and k0+1 at same (j0,i0)
-                w0 = wface[time_index0, k0, j0, i0] * tez + wface[k0 + 1, j0, i0] * zet
-                w1 = wface[time_index1, k0, j0, i0] * tez + wface[k0 + 1, j0, i0] * zet
-
-                # time interpolation
-                um = 1.0 - mu
-                ui = um*u0 + mu*u1
-                vi = um*v0 + mu*v1
-                wi = um*w0 + mu*w1
+                wi = wface[k0, j0, i0] * tez + wface[k0 + 1, j0, i0] * zet
 
                 return np.concatenate([ui, vi, wi])          
 
@@ -382,26 +328,14 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
             k4 = np.empty_like(y)
             tmp = np.empty_like(y)
 
-            time_base = t_axis[self.time_index]
-            delta_time = (self.tintegr - time_base)/nsteps
-
             for step in range(nsteps):
-
-                time_val = time_base + step*delta_time
-
-                k1[:] = velocity_fun(time_val, y)
-
-                time_val += 0.5*delta_time
-                tmp[:] = y + 0.5 * delta_time * k1
-                k2[:] = velocity_fun(time_val, tmp)
-
-                tmp[:] = y + 0.5 * delta_time * k2
+                k1[:] = velocity_fun(y)
+                tmp[:] = y + 0.5 * dt * k1
+                k2[:] = velocity_fun(tmp)
+                tmp[:] = y + 0.5 * dt * k2
                 k3[:] = velocity_fun(tmp)
-
-                time_val += 0.5*delta_time
-                tmp[:] = y + delta_time * k3
-                k4[:] = velocity_fun(time_val, tmp)
-
+                tmp[:] = y + dt * k3
+                k4[:] = velocity_fun(tmp)
                 y += (dt / 6.0) * (k1 + 2.0 * k2 + 2.0 * k3 + k4)
             
             final_pos = y
