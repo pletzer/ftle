@@ -53,7 +53,7 @@ def _estimate_nsteps(uface: np.ndarray, vface: np.ndarray, wface: np.ndarray,
     nsteps ~ 4 * (Umax * |T| / hmin)
     with lower bound min_steps.
     """
-    Umax = np.max(np.sqrt(np.max(uface**2 + vface**2 + wface**2, axis=0)))
+    Umax = np.max(np.sqrt(uface**2 + vface**2 + wface**2))
     hmin = min(dx, dy, dz)
     crossings = Umax * abs(T) / hmin
     nsteps = max(int(4.0 * crossings) + 1, min_steps)
@@ -62,7 +62,7 @@ def _estimate_nsteps(uface: np.ndarray, vface: np.ndarray, wface: np.ndarray,
 # -------------------------------------
 # Cell centred gradient from point data
 # -------------------------------------
-def _gradient_corner_to_center(Xf, dx, dy, dz):
+def _gradient_corner_to_center(Xf: np.ndarray, dx: float, dy: float, dz: np.ndarray) -> np.ndarray:
     """
     Cell-cantered gradients for a field defined at cell corners.
     Xf has shape (nz+1, ny+1, nx+1) = (k, j, i).
@@ -98,7 +98,7 @@ def _gradient_corner_to_center(Xf, dx, dy, dz):
     dXdz = 0.25 * (
           (c001 + c101 + c011 + c111)   # +k side
         - (c000 + c100 + c010 + c110)   # -k side
-    ) / dz
+    ) / dz[:, None, None]
 
     return dXdx, dXdy, dXdz
 
@@ -273,7 +273,6 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
             xaxis = nc.variables['xu'][self.imin:self.imax+1]
             yaxis = nc.variables['yv'][self.jmin:self.jmax+1]
             zaxis = nc.variables['zw_xy'][:] # all the elevations
-            # assert np.allclose(np.diff(z), dz)
             dt = nc.variables['time'][1] - nc.variables['time'][0] # assume constant time step
             nt_all = nc.variables['time'].size
 
@@ -290,11 +289,10 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
 
             xmin = xaxis[0]
             ymin = yaxis[0]
-            zmin = zaxis[0]
-            # assume uniform grid
+            # assume uniform grid in x, y
             dx = xaxis[1] - xaxis[0]
             dy = yaxis[1] - yaxis[0]
-            dz = zaxis[1] - zaxis[0] # assuming constant vertical deltas, which is WRONG at the higher levels!!!!!
+            dz = np.diff(zaxis) # not uniform
             nx1 = len(xaxis)
             ny1 = len(yaxis)
             nz1 = len(zaxis)
@@ -328,20 +326,18 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
                 zi = pos[2*n:3*n]
                 ifloat = (xi - xmin) / dx
                 jfloat = (yi - ymin) / dy
-                kfloat = (zi - zmin) / dz
                 # clamp (so particle leaving domain will be evaluated at boundary cell)
                 ifloat = np.clip(ifloat, 0.0, nx1 - 1.0)
                 jfloat = np.clip(jfloat, 0.0, ny1 - 1.0)
-                kfloat = np.clip(kfloat, 0.0, nz1 - 1.0)
                 # make sure i0, j0 and k0 are on the low side
                 i0 = np.clip(np.floor(ifloat).astype(np.int64), 0, nx1 - 2)
                 j0 = np.clip(np.floor(jfloat).astype(np.int64), 0, ny1 - 2)
-                k0 = np.clip(np.floor(kfloat).astype(np.int64), 0, nz1 - 2)
+                k0 = np.clip(np.searchsorted(zaxis, zi) - 1, 0, nz1 - 2)
 
                 # parametric coordinates of the cell: 0 <= xsi, eta, zet <= 1
                 xsi = ifloat - i0
                 eta = jfloat - j0
-                zet = (zi - zaxis[k0]) / (zaxis[k0+1] - zaxis[k0]) # kfloat - k0
+                zet = (zi - zaxis[k0]) / (zaxis[k0 + 1] - zaxis[k0])
 
                 isx = 1.0 - xsi
                 ate = 1.0 - eta
@@ -360,7 +356,6 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
                     mu = 0.0
                 time_index1 = time_index0 + 1
 
-
                 # u: linear in x between i0 and i0+1 at the same (k0,j0)
                 u0 = uface[time_index0, k0, j0, i0] * isx + uface[time_index0, k0, j0, i0 + 1] * xsi
                 u1 = uface[time_index1, k0, j0, i0] * isx + uface[time_index1, k0, j0, i0 + 1] * xsi
@@ -371,7 +366,7 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
                 w0 = wface[time_index0, k0, j0, i0] * tez + wface[time_index0, k0 + 1, j0, i0] * zet
                 w1 = wface[time_index1, k0, j0, i0] * tez + wface[time_index1, k0 + 1, j0, i0] * zet
 
-                # time interpolation
+                # now time interpolate
                 um = 1.0 - mu
                 ui = um*u0 + mu*u1
                 vi = um*v0 + mu*v1
@@ -381,8 +376,9 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
 
             # integrate the trajectories. y is the state, a concatenated array of 
             # [x..., y..., z...] positions. xyz0 is the initial condition
+            # Note: FTLE is computed from corner-seeded trajectories.
             xyz0 = np.concatenate([xflat, yflat, zflat]).astype(np.float64)
-            nsteps = _estimate_nsteps(uface, vface, wface, dx, dy, dz, self.tintegr)
+            nsteps = _estimate_nsteps(uface, vface, wface, dx, dy, dz.min(), self.tintegr)
 
             # Runge-Kutta 4
             xyz = xyz0.copy()
@@ -392,7 +388,8 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
             k4 = np.empty_like(xyz)
             tmp = np.empty_like(xyz)
 
-            time_base = t_axis[self.time_index]
+            local_index = self.time_index - tmin
+            time_base = t_axis[local_index]
             delta_time = self.tintegr / nsteps
 
             for step in range(nsteps):
@@ -413,7 +410,15 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
                 k4[:] = velocity_fun(time_val, tmp)
 
                 xyz += (delta_time / 6.0) * (k1 + 2.0 * k2 + 2.0 * k3 + k4)
-            
+
+                # Make sure the trajectories are not leaving the domain
+                # Another possibility would be to have a larger domain for
+                # the vector field interpolation. So imin:imax and jmin:jmax 
+                # would only be used for seeding the trajectories
+                xyz[0:n]   = np.clip(xyz[0:n],   xaxis[0], xaxis[-1])
+                xyz[n:2*n] = np.clip(xyz[n:2*n], yaxis[0], yaxis[-1])
+                xyz[2*n:]  = np.clip(xyz[2*n:],  zaxis[0], zaxis[-1])
+
             # reshape
             Xf = xyz[0:n].reshape((nz1, ny1, nx1))
             Yf = xyz[n:2*n].reshape((nz1, ny1, nx1))
