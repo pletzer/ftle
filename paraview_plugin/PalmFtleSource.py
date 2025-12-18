@@ -247,7 +247,6 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
         # --------------------------------------------------------------
 
         t_axis_min = np.min(t_axis)
-        t_axis_max = np.max(t_axis)
         dt = t_axis[1] - t_axis[0] # assume uniform
         nt = t_axis.shape[0]
 
@@ -269,10 +268,18 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
 
             print(f'self.imin={self.imin} self.imax={self.imax} self.jmin={self.jmin} self.jmax={self.jmax}')
 
-            # axes
+            # Note:
+            # imin:imax and jmin:jmax define ONLY the seeding and FTLE output region.
+            # The velocity field is interpolated over the full PALM domain to allow
+            # trajectories to leave the seed region.
+ 
+            # axes for the seeded region
             xaxis = nc.variables['xu'][self.imin:self.imax+1]
             yaxis = nc.variables['yv'][self.jmin:self.jmax+1]
             zaxis = nc.variables['zw_xy'][:] # all the elevations
+            # full domain axes
+            xaxis_full = nc.variables['xu'][:]
+            yaxis_full = nc.variables['yv'][:]
             dt = nc.variables['time'][1] - nc.variables['time'][0] # assume constant time step
             nt_all = nc.variables['time'].size
 
@@ -280,22 +287,24 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
             t_axis = nc.variables['time'][tmin:tmax]
             nt = t_axis.shape[0]
 
-            nx_tot = nc.variables['xu'].size
-            ny_tot = nc.variables['yv'].size
-            if self.imin < 0 or self.imax >= nx_tot:
+            if self.imin < 0 or self.imax >= xaxis_full.size:
                 raise ValueError("Invalid IRange")
-            if self.jmin < 0 or self.jmax >= ny_tot:
+            if self.jmin < 0 or self.jmax >= yaxis_full.size:
                 raise ValueError("Invalid JRange")
 
-            xmin = xaxis[0]
-            ymin = yaxis[0]
+            xmin_full = xaxis_full[0]
+            ymin_full = yaxis_full[0]
+
             # assume uniform grid in x, y
             dx = xaxis[1] - xaxis[0]
             dy = yaxis[1] - yaxis[0]
+
             dz = np.diff(zaxis) # not uniform
             nx1 = len(xaxis)
             ny1 = len(yaxis)
             nz1 = len(zaxis)
+            nx1_full = len(xaxis_full)
+            ny1_full = len(yaxis_full)
             # number of cells
             nx, ny, nz = nx1 - 1, ny1 - 1, nz1 - 1
 
@@ -306,10 +315,17 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
             zflat = zz.ravel()
 
             # read the velocity, expect shape (time, nz, ny, nx). Note we're reading in one more cell in y and
-            # x, and all the cells in z. We're also replacing all the nans with zeros
-            uface = np.nan_to_num( nc.variables['u_xy'][tmin:tmax, :, self.jmin:self.jmax+1, self.imin:self.imax+1], copy=False, nan=0.0)
-            vface = np.nan_to_num( nc.variables['v_xy'][tmin:tmax, :, self.jmin:self.jmax+1, self.imin:self.imax+1], copy=False, nan=0.0)
-            wface = np.nan_to_num( nc.variables['w_xy'][tmin:tmax, :, self.jmin:self.jmax+1, self.imin:self.imax+1], copy=False, nan=0.0)
+            # x, and all the cells in z. We're also replacing all the nans with zeros. We read all the 
+            # velocities to allow trajectories to leave the seed domain
+            uface = np.nan_to_num( 
+                nc.variables['u_xy'][tmin:tmax, :, :, :], 
+                copy=False, nan=0.0)
+            vface = np.nan_to_num( 
+                nc.variables['v_xy'][tmin:tmax, :, :, :], 
+                copy=False, nan=0.0)
+            wface = np.nan_to_num( 
+                nc.variables['w_xy'][tmin:tmax, :, :, :], 
+                copy=False, nan=0.0)
             print(f'nx1={nx1} ny1={ny1} nz1={nz1}')
             print(f'uface.shape={uface.shape}\nvface={vface.shape}\nwface={wface.shape}')
 
@@ -324,14 +340,16 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
                 xi = pos[0:n]
                 yi = pos[n:2*n]
                 zi = pos[2*n:3*n]
-                ifloat = (xi - xmin) / dx
-                jfloat = (yi - ymin) / dy
+                # the velocities are interpolated on the full grid
+                ifloat = (xi - xmin_full) / dx
+                jfloat = (yi - ymin_full) / dy
                 # clamp (so particle leaving domain will be evaluated at boundary cell)
-                ifloat = np.clip(ifloat, 0.0, nx1 - 1.0)
-                jfloat = np.clip(jfloat, 0.0, ny1 - 1.0)
+                ifloat = np.clip(ifloat, 0.0, nx1_full - 1.0)
+                jfloat = np.clip(jfloat, 0.0, ny1_full - 1.0)
                 # make sure i0, j0 and k0 are on the low side
-                i0 = np.clip(np.floor(ifloat).astype(np.int64), 0, nx1 - 2)
-                j0 = np.clip(np.floor(jfloat).astype(np.int64), 0, ny1 - 2)
+                i0 = np.clip(np.floor(ifloat).astype(np.int64), 0, nx1_full - 2)
+                j0 = np.clip(np.floor(jfloat).astype(np.int64), 0, ny1_full - 2)
+                # z axis is not uniform
                 k0 = np.clip(np.searchsorted(zaxis, zi) - 1, 0, nz1 - 2)
 
                 # parametric coordinates of the cell: 0 <= xsi, eta, zet <= 1
@@ -415,8 +433,8 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
                 # Another possibility would be to have a larger domain for
                 # the vector field interpolation. So imin:imax and jmin:jmax 
                 # would only be used for seeding the trajectories
-                xyz[0:n]   = np.clip(xyz[0:n],   xaxis[0], xaxis[-1])
-                xyz[n:2*n] = np.clip(xyz[n:2*n], yaxis[0], yaxis[-1])
+                xyz[0:n]   = np.clip(xyz[0:n],   xaxis_full[0], xaxis_full[-1])
+                xyz[n:2*n] = np.clip(xyz[n:2*n], yaxis_full[0], yaxis_full[-1])
                 xyz[2*n:]  = np.clip(xyz[2*n:],  zaxis[0], zaxis[-1])
 
             # reshape
