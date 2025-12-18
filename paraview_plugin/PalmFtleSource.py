@@ -1,7 +1,11 @@
 """
 Custom ParaView Python Source plugin to read and compute the Finite Time Lyapunov Exponent 
-from PALM data stored in a NetCDF file. This version allows the velocity field to vary in time
-as the grid positions are integrated. 
+from PALM data stored in a NetCDF file. 
+
+This version allows the velocity field:
+ * to be kept frozen in time
+ * or to vary in time 
+ as the grid positions are integrated. 
 
 Inputs:
   - palmfile: path to a NetCDF file
@@ -16,6 +20,7 @@ Reads fields:
 Grid:
   - Assumed 3D, cell-centred output
   - Index order assumed (time, k, j, i) = (time, nz, ny, nx)
+  - x and y spacing assumed uniform; z spacing may be nonuniform.
 """
 
 
@@ -46,25 +51,24 @@ except:
 # -------------------------
 # RK4 step estimate (CFL-like)
 # -------------------------
-def _estimate_nsteps(uface: np.ndarray, vface: np.ndarray, wface: np.ndarray,
-                    dx: float, dy: float, dz: float, T: float, min_steps: int = 20) -> int:
+def _estimate_nsteps(uface, vface, wface, dx, dy, dz, T, min_steps=20):
     """
     Estimate number of RK4 steps using a CFL-like heuristic:
     nsteps ~ 4 * (Umax * |T| / hmin)
     with lower bound min_steps.
     """
-    Umax = np.max(np.sqrt(uface**2 + vface**2 + wface**2))
+    speed2 = uface*uface + vface*vface + wface*wface
+    Umax = np.sqrt(np.nanmax(speed2))
     hmin = min(dx, dy, dz)
     crossings = Umax * abs(T) / hmin
-    nsteps = max(int(4.0 * crossings) + 1, min_steps)
-    return nsteps
+    return max(int(4.0 * crossings) + 1, min_steps)
 
 # -------------------------------------
 # Cell centred gradient from point data
 # -------------------------------------
 def _gradient_corner_to_center(Xf: np.ndarray, dx: float, dy: float, dz: np.ndarray) -> np.ndarray:
     """
-    Cell-cantered gradients for a field defined at cell corners.
+    Cell-centred gradients for a field defined at cell corners.
     Xf has shape (nz+1, ny+1, nx+1) = (k, j, i).
 
     Returns:
@@ -124,6 +128,8 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
         self.jmin = 0
         self.jmax = 1
         self.time_index = 0
+        self.frozen = False
+        self.checksum = True
 
         self.verbose = 0
 
@@ -148,10 +154,16 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
         self.tintegr = float(value)
         self.Modified()
 
-    @smproperty.intvector(name="TIndex", number_of_elements=1, default_values=[10])
-    def SetTIndex(self, value, *args):
+    @smproperty.intvector(name="TimeIndex", number_of_elements=1, default_values=[10])
+    def SetTimeIndex(self, value, *args):
         self.time_index = int(value)
         self.Modified()
+
+    @smproperty.intvector(name="Frozen", number_of_elements=1, default_values=[0])
+    def SetFrozen(self, value, *args):
+        self.frozen = bool(value)
+        self.Modified()
+
 
     @smproperty.intvector(name="IMin", number_of_elements=1, default_values=[180])
     def SetIMin(self, value, *args):
@@ -229,18 +241,24 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
    
     def select_time_window(self, dt: float, nt: int) -> tuple:
         # --------------------------------------------------------------
-        # Select the time window to read data from
+        # Select the time window to read velocity data from
         # --------------------------------------------------------------
         di = int(np.ceil(abs(self.tintegr) / dt))
         
-        if self.tintegr < 0:
-            tmin = max(self.time_index - di, 0)
-            tmax = self.time_index + 1
-        elif self.tintegr > 0:
+        if self.frozen:
             tmin = self.time_index
-            tmax = min(self.time_index + di + 1, nt)
+            tmax = tmin + 1
         else:
-            raise ValueError("tintegr cannot be zero!")
+            if self.tintegr < 0:
+                tmin = max(self.time_index - di, 0)
+                tmax = self.time_index + 1
+            elif self.tintegr > 0:
+                tmin = self.time_index
+                tmax = min(self.time_index + di + 1, nt)
+            else:
+                # zero time integration
+                tmin = self.time_index
+                tmax = tmin + 1
 
         if self.verbose:
             print(f'self.time_index={self.time_index} dt={dt} nt={nt} tmin={tmin} tmax={tmax}')
@@ -294,6 +312,8 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
             tmin, tmax = self.select_time_window(dt, nt_all) # tmin and tmax are indices
             t_axis = nc.variables['time'][tmin:tmax]
             nt = t_axis.shape[0]
+            if not self.frozen and nt < 2:
+                raise ValueError("Need at least two time levels for time-dependent FTLE")
 
             if self.imin < 0 or self.imax >= xaxis_full.size:
                 raise ValueError("Invalid IRange")
@@ -377,12 +397,23 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
                 # conserves fluxes and allows one to have obstacles in the domain (e.g 
                 # buildings)
 
-                time_index0, mu = self.get_lower_time_index_and_param_coord(time_val=time_val, t_axis=t_axis)
-                # must be well inside
-                if time_index0 == nt -1:
-                    time_index0 = nt - 2
+                if self.frozen:
+
+                    time_index0 = 0
                     mu = 0.0
-                time_index1 = time_index0 + 1
+                    time_index1 = 0
+
+                else:
+
+                    # let the velocity vary during the trajectory integrations
+
+                    time_index0, mu = self.get_lower_time_index_and_param_coord(time_val=time_val, t_axis=t_axis)
+
+                    # must be well inside
+                    if time_index0 == nt - 1:
+                        time_index0 = nt - 2
+                        mu = 0.0
+                    time_index1 = time_index0 + 1
 
                 # u: linear in x between i0 and i0+1 at the same (k0,j0)
                 u0 = uface[time_index0, k0, j0, i0] * isx + uface[time_index0, k0, j0, i0 + 1] * xsi
@@ -481,9 +512,16 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
             # Note: the eigenvalues are cell centred (nz, ny, nx)
             max_lambda = np.maximum(eigvals[:, -1], 1.e-16).reshape((nz, ny, nx))
 
-            ftle = np.log(max_lambda) / (2.0 * abs(float(self.tintegr)))
+            if abs(self.tintegr) > 1.e-12:
+                ftle = np.log(max_lambda) / (2.0 * abs(float(self.tintegr)))
+            else:
+                # zero integration time
+                ftle = np.zeros_like(max_lambda)
+
+            if self.checksum:
+                print(f'Checksum: {np.fabs(ftle).sum()}')
         
             return dict(
                 x=xaxis, y=yaxis, z=zaxis, # axes
                 ftle=ftle,
-        )
+            )
