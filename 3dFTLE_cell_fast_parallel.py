@@ -120,12 +120,17 @@ def _vel_fun_numba(
     return out
 
 @njit(cache=True)
-def _rk4_numba(y0, t0, t1, nsteps,
-               n,
-               xmin, ymin, zmin,
-               dx, dy, dz,
-               nx, ny, nz,
-               uface, vface, wface):
+def _rk4_numba(y0: np.ndarray, 
+               t0: float, 
+               t1: float, 
+               nsteps: int,
+               n: int,
+               xmin: float, ymin: float, zmin: float,
+               dx: float, dy: float, dz: float,
+               nx: int, ny: int, nz: int,
+               uface: np.ndarray, 
+               vface: np.ndarray, 
+               wface: np.ndarray):
     y = y0.copy()
     dt = (t1 - t0) / nsteps
     k1 = np.empty(3*n, dtype=np.float64)
@@ -206,7 +211,7 @@ def gradient_corner_to_center(Xf, dx, dy, dz):
 def compute_ftle(
     ds: xr.Dataset,
     time_index: int,
-    T: float,
+    dT: float,
     imin: int,
     imax: Optional[int],
     jmin: int,
@@ -214,8 +219,8 @@ def compute_ftle(
     use_numba: bool = True,
     verbose: bool = False,
 ) -> np.ndarray:
-    if T == 0:
-        raise ValueError("Integration time T must be non-zero.")
+    if dT == 0:
+        raise ValueError("Integration time dT must be non-zero.")
 
     ds = ds.load()
     G = _prepare_grid_and_faces(ds, time_index, imin, imax, jmin, jmax)
@@ -224,8 +229,6 @@ def compute_ftle(
     dx = G['dx']; dy = G['dy']; dz = G['dz']
     xflat = G['xflat']; yflat = G['yflat']; zflat = G['zflat']
 
-    # NOTE: ds passed to this function must contain a time dimension of length >= 1
-    # and the second dimension is elevation (z). Replace Nans with zeros.
     uface = np.asarray(ds.u_xy[time_index, :, jmin:jmax, imin:imax].fillna(0.0)).astype(np.float64)
     vface = np.asarray(ds.v_xy[time_index, :, jmin:jmax, imin:imax].fillna(0.0)).astype(np.float64)
     wface = np.asarray(ds.w_xy[time_index, :, jmin:jmax, imin:imax].fillna(0.0)).astype(np.float64)
@@ -235,14 +238,14 @@ def compute_ftle(
         print(f"dx,dy,dz = {dx},{dy},{dz}")
 
     y0 = np.concatenate([xflat, yflat, zflat]).astype(np.float64)
-    nsteps = estimate_nsteps(uface, vface, wface, dx, dy, dz, T)
+    nsteps = estimate_nsteps(uface, vface, wface, dx, dy, dz, dT)
     if verbose:
         print(f"Using nsteps = {nsteps} for RK4 integration")
 
     # Compute the trajectories. NOTE: we're freezing the velocity
     # in this version
-    t0 = 0.0
-    t1 = float(T)
+    t0 = ds.time[time_index].item()
+    t1 = t0 + dT
 
     if verbose:
         print("Using Numba-accelerated RK4 integrator")
@@ -290,7 +293,7 @@ def compute_ftle(
     eps = 1e-16
     max_lambda = np.clip(max_lambda, eps, None)
 
-    ftle = np.log(max_lambda) / (2.0 * abs(float(T)))
+    ftle = np.log(max_lambda) / (2.0 * abs(float(dT)))
 
     # flte shoiuld be cell centred
     return ftle
@@ -323,6 +326,7 @@ def _worker_compute_and_save(
 
     # engine="netcdf4" fails when reading the file in parallel
     ds = xr.open_dataset(ds_path, engine="h5netcdf", decode_timedelta=False)
+
     # keep a time dimension of length 1 so compute_ftle's indexing works:
     ds_t = ds.isel(time=slice(time_index, time_index + 1))
 

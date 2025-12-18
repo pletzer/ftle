@@ -1,6 +1,6 @@
 """
 Custom ParaView Python Source plugin to read and compute the Finite Time Lyapunov Exponent 
-from PALM data stored in a NetCDF file
+from PALM data stored in a NetCDF file. This version freezes the velocity field.
 
 Inputs:
   - palmfile: path to a NetCDF file
@@ -54,7 +54,7 @@ def _estimate_nsteps(uface: np.ndarray, vface: np.ndarray, wface: np.ndarray,
     """
     usquare  = np.maximum(uface*uface + vface*vface + wface*wface, 1.e-10).max()
     Umax = np.sqrt(usquare)
-    hmin = min(dx, dy, dz)
+    hmin = min(dx, dy, dz.min())
     crossings = Umax * abs(T) / hmin
     nsteps = max(int(4.0 * crossings) + 1, min_steps)
     return nsteps
@@ -64,13 +64,12 @@ def _estimate_nsteps(uface: np.ndarray, vface: np.ndarray, wface: np.ndarray,
 # -------------------------------------
 def _gradient_corner_to_center(Xf, dx, dy, dz):
     """
-    Cell-cantered gradients for a field defined at cell corners.
+    Cell-centered gradients for a field defined at cell corners.
     Xf has shape (nz+1, ny+1, nx+1) = (k, j, i).
 
     Returns:
         (dXdx, dXdy, dXdz) each shaped (nz, ny, nx)
     """
-
     # Corner cube at (k, j, i)
     c000 = Xf[:-1, :-1, :-1]   # (k,   j,   i)
     c100 = Xf[:-1, :-1,  1:]   # (k,   j,   i+1)
@@ -105,7 +104,7 @@ def _gradient_corner_to_center(Xf, dx, dy, dz):
 
 @smproxy.source(
     name="PalmFtleSource",
-    label="PALM FTLE Source",
+    label="PALM FTLE U Frozen Source",
 )
 class PalmFtleSource(VTKPythonAlgorithmBase):
 
@@ -186,13 +185,13 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
         # Node counts
         nx1, ny1, nz1 = res['nx1'], res['ny1'], res['nz1']
         xmin, ymin, zmin = res['xmin'], res['ymin'], res['zmin']
-        dx, dy, dz = res['dx'], res['dy'], res['dz']  # all 4.0 per your print
+        dx, dy, dz = res['dx'], res['dy'], res['dz'] 
 
         # Build image
         image = vtkImageData()
         image.SetExtent(0, nx1 - 1, 0, ny1 - 1, 0, nz1 - 1)
         image.SetOrigin(xmin, ymin, zmin)
-        image.SetSpacing(dx, dy, dz)
+        image.SetSpacing(dx, dy, dz)  # for the time being TO CHANGE
 
         # ---- FTLE is cell-centered and currently in (z, y, x) = (17, 80, 20) ----
         # Convert to (x, y, z) = (20, 80, 17)
@@ -246,7 +245,7 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
             # assume uniform grid
             dx = x[1] - x[0]
             dy = y[1] - y[0]
-            dz = z[1] - z[0]
+            dz = z[1] - z[0] # TO CHANGE! dz increases with altitude
             nx1 = len(x)
             ny1 = len(y)
             nz1 = len(z)

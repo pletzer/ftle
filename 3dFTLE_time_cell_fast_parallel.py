@@ -6,9 +6,11 @@ computes FTLE and writes the VTI output. This avoids passing large xarray
 datasets between processes.
 
 Usage example:
-    python ftle_time_cell_fast_parallel.py --filename data.nc --tmin 0 --tmax 4 --T -10
+    python ftle_fast_parallel.py --filename data.nc --tmin 0 --tmax 4 --T -10
 """
-from typing import Optional
+from __future__ import annotations
+import sys
+from typing import Optional, Tuple, List
 
 import numpy as np
 import xarray as xr
@@ -20,8 +22,61 @@ from dask.distributed import Client, LocalCluster
 
 from numba import njit
 
+def estimate_nsteps(uface: np.ndarray, vface: np.ndarray, wface: np.ndarray,
+                    dx: float, dy: float, dz: float, T: float, min_steps: int = 20) -> int:
+    Umax = float(np.sqrt(uface * uface + vface * vface + wface * wface).max())
+    if Umax <= 0:
+        return min_steps
+    hmin = min(dx, dy, dz)
+    crossings = Umax * abs(T) / hmin
+    nsteps = max(int(4.0 * crossings) + 1, min_steps)
+    return nsteps
+
+
+def gradient_corner_to_center(Xf, dx, dy, dz):
+    """
+    Cell-cantered gradients for a field defined at cell corners.
+    Xf has shape (nz+1, ny+1, nx+1) = (k, j, i).
+
+    Returns:
+        (dXdx, dXdy, dXdz) each shaped (nz, ny, nx)
+    """
+
+    # Corner cube at (k, j, i)
+    c000 = Xf[:-1, :-1, :-1]   # (k,   j,   i)
+    c100 = Xf[:-1, :-1,  1:]   # (k,   j,   i+1)
+    c010 = Xf[:-1,  1:, :-1]   # (k,   j+1, i)
+    c110 = Xf[:-1,  1:,  1:]   # (k,   j+1, i+1)
+
+    c001 = Xf[ 1:, :-1, :-1]   # (k+1, j,   i)
+    c101 = Xf[ 1:, :-1,  1:]   # (k+1, j,   i+1)
+    c011 = Xf[ 1:,  1:, :-1]   # (k+1, j+1, i)
+    c111 = Xf[ 1:,  1:,  1:]   # (k+1, j+1, i+1)
+
+    # ----- dX/dx — difference across i -----
+    dXdx = 0.25 * (
+          (c100 + c110 + c101 + c111)   # +i side
+        - (c000 + c010 + c001 + c011)   # -i side
+    ) / dx
+
+    # ----- dX/dy — difference across j -----
+    dXdy = 0.25 * (
+          (c010 + c110 + c011 + c111)   # +j side
+        - (c000 + c100 + c001 + c101)   # -j side
+    ) / dy
+
+    # ----- dX/dz — difference across k -----
+    dXdz = 0.25 * (
+          (c001 + c101 + c011 + c111)   # +k side
+        - (c000 + c100 + c010 + c110)   # -k side
+    ) / dz
+
+    return dXdx, dXdy, dXdz
+
+
 def _prepare_grid_and_faces(
     ds: xr.Dataset,
+    time_index: int,
     imin: int,
     imax: Optional[int],
     jmin: int,
@@ -105,7 +160,6 @@ def _vel_fun_numba(
         ate = 1.0 - eta
         tez = 1.0 - zet
 
-        # mimetic interpolation 
         ui[idx] = uface[k0, j0, i0] * isx + uface[k0, j0, i0 + 1] * xsi
         vi[idx] = vface[k0, j0, i0] * ate + vface[k0, j0 + 1, i0] * eta
         wi[idx] = wface[k0, j0, i0] * tez + wface[k0 + 1, j0, i0] * zet
@@ -118,13 +172,18 @@ def _vel_fun_numba(
     return out
 
 @njit(cache=True)
-def _rk4_numba(y0, t0, t1, nsteps,
-               n,
-               xmin, ymin, zmin,
-               dx, dy, dz,
-               nx, ny, nz,
-               time_axis, 
-               uface, vface, wface):
+def _rk4_numba(y0: np.ndarray, 
+               t0: float, 
+               t1: float, 
+               nsteps: int,
+               time_axis: np.ndarray,
+               n: int,
+               xmin: float, ymin: float, zmin: float,
+               dx: float, dy: float, dz: float,
+               nx: int, ny: int, nz: int,
+               uface: np.ndarray, 
+               vface: np.ndarray, 
+               wface: np.ndarray):
     y = y0.copy()
     dt = (t1 - t0) / nsteps
     k1 = np.empty(3*n, dtype=np.float64)
@@ -133,126 +192,39 @@ def _rk4_numba(y0, t0, t1, nsteps,
     k4 = np.empty(3*n, dtype=np.float64)
     tmp = np.empty(3*n, dtype=np.float64)
 
-    nt = len(time_axis)
-    tmin = time_axis[0]
-
     for step in range(nsteps):
-
-        t = t0 + step*dt
-        tfloat = (t - tmin) / dt
-        it0 = min( max( np.floor( tfloat ), 0 ), nt - 2)
-        it1 = it0 + 1
-        mu = t - tfloat
-        um = 1.0 - mu
-        uface_tinterp = um*uface[it0,...] + mu*uface[it1,...]
-        vface_tinterp = um*vface[it0,...] + mu*vface[it1,...]
-        wface_tinterp = um*wface[it0,...] + mu*wface[it1,...]
-        k1[:] = _vel_fun_numba(y, n, xmin, ymin, zmin, dx, dy, dz, nx, ny, nz, uface_tinterp, vface_tinterp, wface_tinterp)
+        k1[:] = _vel_fun_numba(y, n, xmin, ymin, zmin, dx, dy, dz, nx, ny, nz, uface, vface, wface)
         for i in range(3*n):
             tmp[i] = y[i] + 0.5*dt*k1[i]
-
-        t = t0 + step*dt + 0.5*dt
-        tfloat = (t - tmin) / dt
-        it0 = min( max( np.floor( tfloat ), 0 ), nt - 2)
-        it1 = it0 + 1
-        mu = t - tfloat
-        um = 1.0 - mu
-        uface_tinterp = um*uface[it0,...] + mu*uface[it1,...]
-        vface_tinterp = um*vface[it0,...] + mu*vface[it1,...]
-        wface_tinterp = um*wface[it0,...] + mu*wface[it1,...]
-        k2[:] = _vel_fun_numba(tmp, n, xmin, ymin, zmin, dx, dy, dz, nx, ny, nz, uface_tinterp, vface_tinterp, wface_tinterp)
+        k2[:] = _vel_fun_numba(tmp, n, xmin, ymin, zmin, dx, dy, dz, nx, ny, nz, uface, vface, wface)
         for i in range(3*n):
             tmp[i] = y[i] + 0.5*dt*k2[i]
-
-        k3[:] = _vel_fun_numba(tmp, n, xmin, ymin, zmin, dx, dy, dz, nx, ny, nz, uface_tinterp, vface_tinterp, wface_tinterp)
+        k3[:] = _vel_fun_numba(tmp, n, xmin, ymin, zmin, dx, dy, dz, nx, ny, nz, uface, vface, wface)
         for i in range(3*n):
             tmp[i] = y[i] + dt*k3[i]
-
-        t = t0 + step*dt + dt
-        tfloat = (t - tmin) / dt
-        it0 = min( max( np.floor( tfloat ), 0 ), nt - 2)
-        it1 = it0 + 1
-        mu = t - tfloat
-        um = 1.0 - mu
-        uface_tinterp = um*uface[it0,...] + mu*uface[it1,...]
-        vface_tinterp = um*vface[it0,...] + mu*vface[it1,...]
-        wface_tinterp = um*wface[it0,...] + mu*wface[it1,...]
-        k4[:] = _vel_fun_numba(tmp, n, xmin, ymin, zmin, dx, dy, dz, nx, ny, nz, uface_tinterp, vface_tinterp, wface_tinterp)
-
+        k4[:] = _vel_fun_numba(tmp, n, xmin, ymin, zmin, dx, dy, dz, nx, ny, nz, uface, vface, wface)
         for i in range(3*n):
             y[i] = y[i] + (dt/6.0)*(k1[i] + 2.0*k2[i] + 2.0*k3[i] + k4[i])
-
     return y
-
-def estimate_nsteps(uface: np.ndarray, vface: np.ndarray, wface: np.ndarray,
-                    dx: float, dy: float, dz: float, T: float, min_steps: int = 20) -> int:
-    Umax = float(np.sqrt(uface * uface + vface * vface + wface * wface).max())
-    if Umax <= 0:
-        return min_steps
-    hmin = min(dx, dy, dz)
-    crossings = Umax * abs(T) / hmin
-    nsteps = max(int(4.0 * crossings) + 1, min_steps)
-    return nsteps
-
-
-import numpy as np
-
-def gradient_corner_to_center(Xf, dx, dy, dz):
-    """
-    Cell-cantered gradients for a field defined at cell corners.
-    Xf has shape (nz+1, ny+1, nx+1) = (k, j, i).
-
-    Returns:
-        (dXdx, dXdy, dXdz) each shaped (nz, ny, nx)
-    """
-
-    # Corner cube at (k, j, i)
-    c000 = Xf[:-1, :-1, :-1]   # (k,   j,   i)
-    c100 = Xf[:-1, :-1,  1:]   # (k,   j,   i+1)
-    c010 = Xf[:-1,  1:, :-1]   # (k,   j+1, i)
-    c110 = Xf[:-1,  1:,  1:]   # (k,   j+1, i+1)
-
-    c001 = Xf[ 1:, :-1, :-1]   # (k+1, j,   i)
-    c101 = Xf[ 1:, :-1,  1:]   # (k+1, j,   i+1)
-    c011 = Xf[ 1:,  1:, :-1]   # (k+1, j+1, i)
-    c111 = Xf[ 1:,  1:,  1:]   # (k+1, j+1, i+1)
-
-    # ----- dX/dx — difference across i -----
-    dXdx = 0.25 * (
-          (c100 + c110 + c101 + c111)   # +i side
-        - (c000 + c010 + c001 + c011)   # -i side
-    ) / dx
-
-    # ----- dX/dy — difference across j -----
-    dXdy = 0.25 * (
-          (c010 + c110 + c011 + c111)   # +j side
-        - (c000 + c100 + c001 + c101)   # -j side
-    ) / dy
-
-    # ----- dX/dz — difference across k -----
-    dXdz = 0.25 * (
-          (c001 + c101 + c011 + c111)   # +k side
-        - (c000 + c100 + c010 + c110)   # -k side
-    ) / dz
-
-    return dXdx, dXdy, dXdz
-
 
 def compute_ftle(
     ds: xr.Dataset,
-    this_time: float,
+    time: float,
     dT: float,
     imin: int,
-    imax: Optional[int],
+    imax: int,
     jmin: int,
-    jmax: Optional[int],
-    use_numba: bool = True,
+    jmax: int,
+    uface: np.ndarray, 
+    vface: np.ndarray, 
+    wface: np.ndarray,
     verbose: bool = False,
 ) -> np.ndarray:
     
+    if dT == 0:
+        raise ValueError("Integration time dT must be non-zero.")
 
-    ds = ds.load()
-    G = _prepare_grid_and_faces(ds, imin, imax, jmin, jmax)
+    G = _prepare_grid_and_faces(ds, time_index, imin, imax, jmin, jmax)
     nx = G['nx']; ny = G['ny']; nz = G['nz']; n = G['n']
     xmin = G['xmin']; ymin = G['ymin']; zmin = G['zmin']
     dx = G['dx']; dy = G['dy']; dz = G['dz']
@@ -262,32 +234,25 @@ def compute_ftle(
         print(f"nx,ny,nz = {nx},{ny},{nz}, npoints = {n}")
         print(f"dx,dy,dz = {dx},{dy},{dz}")
 
-
-    time_min = min(this_time - dT, this_time)
-    time_max = max(this_time + dT, this_time)
-    time_window = slice(time_min, time_max)
-    # read the velocities in the time window
-    uface_t = ds.u_xy.sel(time=time_window)[:]
-    vface_t = ds.v_xy.sel(time=time_window)[:]
-    wface_t = ds.w_xy.sel(time=time_window)[:]
-    time_axis = ds.time.sel(time=time_window)[:]
-
     y0 = np.concatenate([xflat, yflat, zflat]).astype(np.float64)
-    nsteps = estimate_nsteps(uface_t, vface_t, wface_t, dx, dy, dz, dT)
+    nsteps = estimate_nsteps(uface, vface, wface, dx, dy, dz, dT)
     if verbose:
         print(f"Using nsteps = {nsteps} for RK4 integration")
 
-    # Compute the trajectories.
+    # Compute the trajectories. NOTE: we're freezing the velocity
+    # in this version
+    t0 = ds.time[time_index].item()
+    t1 = t0 + dT
+    time_axis = ds.time.to_numpy()
+
     if verbose:
         print("Using Numba-accelerated RK4 integrator")
-
-    final_pos = _rk4_numba(y0, this_time, dT, nsteps,
+    final_pos = _rk4_numba(y0, t0, t1, nsteps, time_axis,
                             n,
                             xmin, ymin, zmin,
                             dx, dy, dz,
                             nx, ny, nz,
-                            time_axis,
-                            uface_t, vface_t, wface_t)
+                            uface, vface, wface)
 
     Xf = final_pos[0:n].reshape((nz, ny, nx))
     Yf = final_pos[n:2*n].reshape((nz, ny, nx))
@@ -326,7 +291,7 @@ def compute_ftle(
     eps = 1e-16
     max_lambda = np.clip(max_lambda, eps, None)
 
-    ftle = np.log(max_lambda) / (2.0 * abs(float(T)))
+    ftle = np.log(max_lambda) / (2.0 * abs(float(dT)))
 
     # flte shoiuld be cell centred
     return ftle
@@ -357,23 +322,45 @@ def _worker_compute_and_save(
     import numpy as np
     import pyvista as pv
 
-    if dT == 0: 
-        raise RuntimeError("T cannot be zero")
-
     # engine="netcdf4" fails when reading the file in parallel
     ds = xr.open_dataset(ds_path, engine="h5netcdf", decode_timedelta=False)
 
-    # subset to the time window of interest
-    this_time = ds.time[time_index]
-    time_min = min(this_time, this_time + dT) # dT can be < 0
-    time_max = max(this_time, this_time + dT)        
-    ds_t = ds.sel(time=(slice(time_min, time_max)))
+    # determine the time window
+    dt = (ds.time[1] - ds.time[0]).item()
+    di = int(np.ceil( abs(dT) / dt ))
+    time_index_min = time_index
+    time_index_max = time_index + 1
+    if dT < 0:
+        time_index_min = time_index - di
+    else:
+        # dT > 0
+        time_index_max = time_index + di
+    if time_index_min < 0:
+        print(f'Warning: negative time_index_min -> increase tmin')
+        time_index_min = 0
+    if time_index_max >= len(ds.time):
+        print(f'Warning: time_index_max  too large -> decrease tmax')
+        time_index_max = len(ds.time) - 1
+
+    print(f'time_index_min/time_index_max = {time_index_min}/{time_index_max} dt = {dt}')
+
+    uface = np.asarray(ds.u_xy[time_index_min:time_index_max, :, jmin:jmax, imin:imax].fillna(0.0)).astype(np.float64)
+    vface = np.asarray(ds.v_xy[time_index_min:time_index_max, :, jmin:jmax, imin:imax].fillna(0.0)).astype(np.float64)
+    wface = np.asarray(ds.w_xy[time_index_min:time_index_max, :, jmin:jmax, imin:imax].fillna(0.0)).astype(np.float64)
+
+    # get the time indices of interest
+    ds_t = ds.isel(time=slice(time_index_min, time_index_max))
+    # FOR THE TIME BEING  *** TO CHANGE ***
+    #ds_t = ds.isel(time=slice(time_index, time_index + 1))
+
+    time = ds.time[time_index].item()
 
     # load the required slice into memory
     ds_t = ds_t.load()
 
+
     # compute ftle; now the time index inside this sliced dataset is 0
-    ftle = compute_ftle(ds_t, this_time, dT, imin, imax, jmin, jmax, use_numba=use_numba, verbose=verbose)
+    ftle = compute_ftle(ds_t, time, dT, imin, imax, jmin, jmax, uface, vface, wface, verbose=verbose)
 
     nz, ny, nx = ftle.shape
     # ftle is cell centred

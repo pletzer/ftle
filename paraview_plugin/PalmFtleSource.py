@@ -14,7 +14,7 @@ Reads fields:
   - u_xy, v_xy, w_xy
 
 Grid:
-  - Assumed uniform, 3D, cell-centred output
+  - Assumed 3D, cell-centred output
   - Index order assumed (time, k, j, i) = (time, nz, ny, nx)
 """
 
@@ -34,7 +34,7 @@ Grid:
 from paraview.util.vtkAlgorithm import *
 import numpy as np
 import netCDF4
-from vtkmodules.vtkCommonDataModel import vtkImageData, vtkMultiBlockDataSet
+from vtkmodules.vtkCommonDataModel import vtkRectilinearGrid, vtkMultiBlockDataSet
 import vtk
 
 try:
@@ -183,21 +183,27 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
 
         res = self._compute_ftle()
 
-        # Node counts
-        nx1, ny1, nz1 = res['nx1'], res['ny1'], res['nz1']
-        xmin, ymin, zmin = res['xmin'], res['ymin'], res['zmin']
-        dx, dy, dz = res['dx'], res['dy'], res['dz']  # all 4.0 per your print
+        # Axes
+        x, y, z = res['x'], res['y'], res['z']
+        print(f'x = {x} y = {y} z = {z}')
+        # Number of nodes
+        nx1, ny1, nz1 = x.shape[0], y.shape[0], z.shape[0]
 
         # Build image
-        image = vtkImageData()
-        image.SetExtent(0, nx1 - 1, 0, ny1 - 1, 0, nz1 - 1)
-        image.SetOrigin(xmin, ymin, zmin)
-        image.SetSpacing(dx, dy, dz)
+        grid = vtkRectilinearGrid()
+        grid.SetDimensions(nx1, ny1, nz1)
+
+        # convert the numpy arrays to VTK arrays
+        x_arr = numpy_support.numpy_to_vtk(num_array=x, deep=True, array_type=vtk.VTK_DOUBLE)
+        y_arr = numpy_support.numpy_to_vtk(num_array=y, deep=True, array_type=vtk.VTK_DOUBLE)
+        z_arr = numpy_support.numpy_to_vtk(num_array=z, deep=True, array_type=vtk.VTK_DOUBLE)
+        grid.SetXCoordinates(x_arr)
+        grid.SetYCoordinates(y_arr)
+        grid.SetZCoordinates(z_arr)
 
         # ---- FTLE is cell-centered and currently in (z, y, x) = (17, 80, 20) ----
         # Convert to (x, y, z) = (20, 80, 17)
         ftle_xyz = res['ftle'].transpose((2, 1, 0)).astype(np.float32)  # (nx-1, ny-1, nz-1)
-        #ftle_xyz = res['ftle'].astype(np.float32)
 
         vtk_arr = numpy_support.numpy_to_vtk(
             num_array=ftle_xyz.ravel(order='F'),   # x fastest, then y, then z
@@ -206,18 +212,13 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
         )
         vtk_arr.SetName("FTLE")
 
-        cd = image.GetCellData()
+        cd = grid.GetCellData()
         cd.AddArray(vtk_arr)
         cd.SetScalars(vtk_arr)  # make FTLE the active cell scalar
 
-        # Diagnostics
-        print(f"Extent: x=[0,{nx1-1}] y=[0,{ny1-1}] z=[0,{nz1-1}]")
-        print(f"Cells expected: {(nx1-1)*(ny1-1)*(nz1-1)}  FTLE tuples: {ftle_xyz.size}")
-        print(f"FTLE min/max: {np.nanmin(ftle_xyz):.6g} / {np.nanmax(ftle_xyz):.6g} shape: {ftle_xyz.shape}")
-
         # 3. Put it in the multi-block output
         output = vtkMultiBlockDataSet.GetData(outInfo, 0)
-        output.SetBlock(0, image)
+        output.SetBlock(0, grid)
  
         return 1
    
@@ -267,9 +268,11 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
         with netCDF4.Dataset(self.palmfile, "r") as nc:
 
             print(f'self.imin={self.imin} self.imax={self.imax} self.jmin={self.jmin} self.jmax={self.jmax}')
-            x = nc.variables['xu'][self.imin:self.imax+1]
-            y = nc.variables['yv'][self.jmin:self.jmax+1]
-            z = nc.variables['zw_xy'][:]
+
+            # axes
+            xaxis = nc.variables['xu'][self.imin:self.imax+1]
+            yaxis = nc.variables['yv'][self.jmin:self.jmax+1]
+            zaxis = nc.variables['zw_xy'][:] # all the elevations
             # assert np.allclose(np.diff(z), dz)
             dt = nc.variables['time'][1] - nc.variables['time'][0] # assume constant time step
             nt_all = nc.variables['time'].size
@@ -285,21 +288,21 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
             if self.jmin < 0 or self.jmax >= ny_tot:
                 raise ValueError("Invalid JRange")
 
-            xmin = x[0]
-            ymin = y[0]
-            zmin = z[0]
+            xmin = xaxis[0]
+            ymin = yaxis[0]
+            zmin = zaxis[0]
             # assume uniform grid
-            dx = x[1] - x[0]
-            dy = y[1] - y[0]
-            dz = z[1] - z[0] # assuming constant vertical deltas, which is WRONG at the higher levels!!!!!
-            nx1 = len(x)
-            ny1 = len(y)
-            nz1 = len(z)
+            dx = xaxis[1] - xaxis[0]
+            dy = yaxis[1] - yaxis[0]
+            dz = zaxis[1] - zaxis[0] # assuming constant vertical deltas, which is WRONG at the higher levels!!!!!
+            nx1 = len(xaxis)
+            ny1 = len(yaxis)
+            nz1 = len(zaxis)
             # number of cells
             nx, ny, nz = nx1 - 1, ny1 - 1, nz1 - 1
 
             # mesh with indexing 'ij' so shapes are (nz, ny, nx)
-            zz, yy, xx = np.meshgrid(z, y, x, indexing="ij")
+            zz, yy, xx = np.meshgrid(zaxis, yaxis, xaxis, indexing="ij")
             xflat = xx.ravel()
             yflat = yy.ravel()
             zflat = zz.ravel()
@@ -338,7 +341,7 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
                 # parametric coordinates of the cell: 0 <= xsi, eta, zet <= 1
                 xsi = ifloat - i0
                 eta = jfloat - j0
-                zet = (zi - z[k0]) / (z[k0+1] - z[k0]) # kfloat - k0
+                zet = (zi - zaxis[k0]) / (zaxis[k0+1] - zaxis[k0]) # kfloat - k0
 
                 isx = 1.0 - xsi
                 ate = 1.0 - eta
@@ -377,17 +380,17 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
                 return np.concatenate([ui, vi, wi])          
 
             # integrate the trajectories. y is the state, a concatenated array of 
-            # [x..., y..., z...] positions. y0 is the initial condition
-            y0 = np.concatenate([xflat, yflat, zflat]).astype(np.float64)
+            # [x..., y..., z...] positions. xyz0 is the initial condition
+            xyz0 = np.concatenate([xflat, yflat, zflat]).astype(np.float64)
             nsteps = _estimate_nsteps(uface, vface, wface, dx, dy, dz, self.tintegr)
 
             # Runge-Kutta 4
-            y = y0.copy()
-            k1 = np.empty_like(y)
-            k2 = np.empty_like(y)
-            k3 = np.empty_like(y)
-            k4 = np.empty_like(y)
-            tmp = np.empty_like(y)
+            xyz = xyz0.copy()
+            k1 = np.empty_like(xyz)
+            k2 = np.empty_like(xyz)
+            k3 = np.empty_like(xyz)
+            k4 = np.empty_like(xyz)
+            tmp = np.empty_like(xyz)
 
             time_base = t_axis[self.time_index]
             delta_time = self.tintegr / nsteps
@@ -396,28 +399,25 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
 
                 time_val = time_base + step * delta_time
 
-                k1[:] = velocity_fun(time_val, y)
+                k1[:] = velocity_fun(time_val, xyz)
 
                 time_val += 0.5*delta_time
-                tmp[:] = y + 0.5 * delta_time * k1
+                tmp[:] = xyz + 0.5 * delta_time * k1
                 k2[:] = velocity_fun(time_val, tmp)
 
-                tmp[:] = y + 0.5 * delta_time * k2
+                tmp[:] = xyz + 0.5 * delta_time * k2
                 k3[:] = velocity_fun(time_val, tmp)
 
                 time_val += 0.5*delta_time
-                tmp[:] = y + delta_time * k3
+                tmp[:] = xyz + delta_time * k3
                 k4[:] = velocity_fun(time_val, tmp)
 
-                y += (delta_time / 6.0) * (k1 + 2.0 * k2 + 2.0 * k3 + k4)
+                xyz += (delta_time / 6.0) * (k1 + 2.0 * k2 + 2.0 * k3 + k4)
             
-            final_pos = y
-
             # reshape
-            Xf = final_pos[0:n].reshape((nz1, ny1, nx1))
-            Yf = final_pos[n:2*n].reshape((nz1, ny1, nx1))
-            Zf = final_pos[2*n:3*n].reshape((nz1, ny1, nx1))
-            #print(f'Xf={Xf}\nYf={Yf}\nZf={Zf}')
+            Xf = xyz[0:n].reshape((nz1, ny1, nx1))
+            Yf = xyz[n:2*n].reshape((nz1, ny1, nx1))
+            Zf = xyz[2*n:3*n].reshape((nz1, ny1, nx1))
 
             # Compute the deformation gradient F at cell centres
             f11, f12, f13 = _gradient_corner_to_center(Xf, dx, dy, dz)
@@ -451,8 +451,6 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
             ftle = np.log(max_lambda) / (2.0 * abs(float(self.tintegr)))
         
             return dict(
-                xmin=xmin, ymin=ymin, zmin=zmin,
-                dx=dx, dy=dy, dz=dz,
-                nx1=nx1, ny1=ny1, nz1=nz1,
+                x=xaxis, y=yaxis, z=zaxis, # axes
                 ftle=ftle,
         )
