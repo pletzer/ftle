@@ -125,6 +125,8 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
         self.jmax = 1
         self.time_index = 0
 
+        self.verbose = 0
+
     # ------------------------------------------------------------------
     # Properties exposed to ParaView GUI
     # ------------------------------------------------------------------
@@ -185,7 +187,10 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
 
         # Axes
         x, y, z = res['x'], res['y'], res['z']
-        print(f'x = {x} y = {y} z = {z}')
+
+        if self.verbose:
+            print(f'x = {x} y = {y} z = {z}')
+
         # Number of nodes
         nx1, ny1, nz1 = x.shape[0], y.shape[0], z.shape[0]
 
@@ -237,7 +242,9 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
         else:
             raise ValueError("tintegr cannot be zero!")
 
-        print(f'self.time_index={self.time_index} dt={dt} nt={nt} tmin={tmin} tmax={tmax}')
+        if self.verbose:
+            print(f'self.time_index={self.time_index} dt={dt} nt={nt} tmin={tmin} tmax={tmax}')
+
         return tmin, tmax
 
 
@@ -266,7 +273,8 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
         # --------------------------------------------------------------
         with netCDF4.Dataset(self.palmfile, "r") as nc:
 
-            print(f'self.imin={self.imin} self.imax={self.imax} self.jmin={self.jmin} self.jmax={self.jmax}')
+            if self.verbose:
+                print(f'self.imin={self.imin} self.imax={self.imax} self.jmin={self.jmin} self.jmax={self.jmax}')
 
             # Note:
             # imin:imax and jmin:jmax define ONLY the seeding and FTLE output region.
@@ -326,8 +334,10 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
             wface = np.nan_to_num( 
                 nc.variables['w_xy'][tmin:tmax, :, :, :], 
                 copy=False, nan=0.0)
-            print(f'nx1={nx1} ny1={ny1} nz1={nz1}')
-            print(f'uface.shape={uface.shape}\nvface={vface.shape}\nwface={wface.shape}')
+
+            if self.verbose:
+                print(f'nx1={nx1} ny1={ny1} nz1={nz1}')
+                print(f'uface.shape={uface.shape}\nvface.shape={vface.shape}\nwface.shape={wface.shape}')
 
             # total number of grid points
             n = len(xflat)
