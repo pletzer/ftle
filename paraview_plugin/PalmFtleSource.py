@@ -225,22 +225,18 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
         # --------------------------------------------------------------
         # Select the time window to read data from
         # --------------------------------------------------------------
-        tmin = self.time_index
-        tmax = self.time_index + 1
-        di = int( np.ceil(self.tintegr/dt) )
+        di = int(np.ceil(abs(self.tintegr) / dt))
+        
         if self.tintegr < 0:
-            tmin -= di
+            tmin = max(self.time_index - di, 0)
+            tmax = self.time_index + 1
         elif self.tintegr > 0:
-            tmax += di
+            tmin = self.time_index
+            tmax = min(self.time_index + di + 1, nt)
         else:
             raise ValueError("tintegr cannot be zero!")
-        
-        # Make sure the time indices are within bounds
-        tmin = max(tmin, 0)
-        tmax = min(tmax, nt)
-        print(f'self.time_index = {self.time_index} dt = {dt} nt = {nt} tmin = {tmin} tmax = {tmax}')
 
-        # min/max indices
+        print(f'self.time_index={self.time_index} dt={dt} nt={nt} tmin={tmin} tmax={tmax}')
         return tmin, tmax
 
 
@@ -249,8 +245,8 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
         # Get the time index and time interval parametric coordinate from the time value
         # --------------------------------------------------------------
 
-        t_axis_min = np.minimum(t_axis)
-        t_axis_max = np.maximum(t_axis)
+        t_axis_min = np.min(t_axis)
+        t_axis_max = np.max(t_axis)
         dt = t_axis[1] - t_axis[0] # assume uniform
         nt = t_axis.shape[0]
 
