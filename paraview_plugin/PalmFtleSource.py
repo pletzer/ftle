@@ -43,13 +43,20 @@ from vtkmodules.vtkCommonDataModel import vtkRectilinearGrid, vtkMultiBlockDataS
 import vtk
 import time
 
+# so that Python sees the shared libraries
+import sys, os
+sys.path.insert(0, os.path.dirname(__file__))
+
+# C++ extensions
+import time_index
+
 try:
     # paraview 6.x
     from vtkmodules.util import numpy_support
 except:
     from vtk.util import numpy_support
 
-def _get_lower_time_index_and_param_coord(time_val: float, t_axis: np.ndarray) -> tuple:
+def _XXXXget_lower_time_index_and_param_coord(time_val: float, t_axis: np.ndarray) -> tuple:
     # --------------------------------------------------------------
     # Get the time index and time interval parametric coordinate from the time value
     # --------------------------------------------------------------
@@ -417,7 +424,7 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
 
                     # let the velocity vary during trajectory integrations
 
-                    time_index0, mu = _get_lower_time_index_and_param_coord(time_val=time_val, t_axis=t_axis)
+                    time_index0, mu = time_index.get_lower_time_index_and_param_coord(time_val=time_val, t_axis=t_axis)
 
                     # must be well inside
                     if time_index0 == nt - 1:
