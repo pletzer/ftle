@@ -170,17 +170,17 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
         self.imin = int(value)
         self.Modified()
 
-    @smproperty.intvector(name="IMax", number_of_elements=1, default_values=[200])
+    @smproperty.intvector(name="IMax", number_of_elements=1, default_values=[320])
     def SetIMax(self, value, *args):
         self.imax = int(value)
         self.Modified()
 
-    @smproperty.intvector(name="JMin", number_of_elements=1, default_values=[220])
+    @smproperty.intvector(name="JMin", number_of_elements=1, default_values=[180])
     def SetJMin(self, value, *args):
         self.jmin = int(value)
         self.Modified()
 
-    @smproperty.intvector(name="JMax", number_of_elements=1, default_values=[300])
+    @smproperty.intvector(name="JMax", number_of_elements=1, default_values=[260])
     def SetJMax(self, value, *args):
         self.jmax = int(value)
         self.Modified()
@@ -489,23 +489,16 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
             f31, f32, f33 = _gradient_corner_to_center(Zf, dx, dy, dz)
 
             # Cauchy-Green tensor components
-            C11 = f11*f11 + f21*f21 + f31*f31
-            C12 = f11*f12 + f21*f22 + f31*f32
-            C13 = f11*f13 + f21*f23 + f31*f33
-            C22 = f12*f12 + f22*f22 + f32*f32
-            C23 = f12*f13 + f22*f23 + f32*f33
-            C33 = f13*f13 + f23*f23 + f33*f33
-
-            C = np.empty((nz, ny, nx, 3, 3), dtype=C11.dtype)
-            C[..., 0, 0] = C11
-            C[..., 0, 1] = C12
-            C[..., 0, 2] = C13
-            C[..., 1, 0] = C12
-            C[..., 1, 1] = C22
-            C[..., 1, 2] = C23
-            C[..., 2, 0] = C13
-            C[..., 2, 1] = C23
-            C[..., 2, 2] = C33
+            C = np.empty((nz, ny, nx, 3, 3), dtype=float)
+            C[..., 0, 0] = f11*f11 + f21*f21 + f31*f31
+            C[..., 0, 1] = f11*f12 + f21*f22 + f31*f32
+            C[..., 0, 2] = f11*f13 + f21*f23 + f31*f33
+            C[..., 1, 0] = C[..., 0, 1]
+            C[..., 1, 1] = f12*f12 + f22*f22 + f32*f32
+            C[..., 1, 2] = f12*f13 + f22*f23 + f32*f33
+            C[..., 2, 0] = C[..., 0, 2]
+            C[..., 2, 1] = C[..., 1, 2]
+            C[..., 2, 2] = f13*f13 + f23*f23 + f33*f33
             C_flat = C.reshape(-1, 3, 3)
             eigvals = np.linalg.eigvalsh(C_flat)
 
