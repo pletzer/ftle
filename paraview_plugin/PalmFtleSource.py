@@ -49,6 +49,24 @@ try:
 except:
     from vtk.util import numpy_support
 
+def _get_lower_time_index_and_param_coord(time_val: float, t_axis: np.ndarray) -> tuple:
+    # --------------------------------------------------------------
+    # Get the time index and time interval parametric coordinate from the time value
+    # --------------------------------------------------------------
+
+    t_axis_min = np.min(t_axis)
+    dt = t_axis[1] - t_axis[0] # assume uniform
+    nt = t_axis.shape[0]
+
+    t_index = int(np.floor((time_val - t_axis_min) / dt))
+    t_index = np.clip(t_index, 0, nt - 2)
+
+    mu = (time_val - t_axis[t_index])/dt
+    mu = np.clip(mu, 0.0, 1.0)
+
+    return (t_index, mu)
+
+
 # -------------------------
 # RK4 step estimate (CFL-like)
 # -------------------------
@@ -267,24 +285,6 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
         return tmin, tmax
 
 
-    def get_lower_time_index_and_param_coord(self, time_val: float, t_axis: np.ndarray) -> tuple:
-        # --------------------------------------------------------------
-        # Get the time index and time interval parametric coordinate from the time value
-        # --------------------------------------------------------------
-
-        t_axis_min = np.min(t_axis)
-        dt = t_axis[1] - t_axis[0] # assume uniform
-        nt = t_axis.shape[0]
-
-        t_index = int(np.floor((time_val - t_axis_min) / dt))
-        t_index = np.clip(t_index, 0, nt - 2)
-
-        mu = (time_val - t_axis[t_index])/dt
-        mu = np.clip(mu, 0.0, 1.0)
-
-        return (t_index, mu)
-
-
     def _compute_ftle(self) -> dict:
 
         # --------------------------------------------------------------
@@ -415,14 +415,15 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
 
                 else:
 
-                    # let the velocity vary during the trajectory integrations
+                    # let the velocity vary during trajectory integrations
 
-                    time_index0, mu = self.get_lower_time_index_and_param_coord(time_val=time_val, t_axis=t_axis)
+                    time_index0, mu = _get_lower_time_index_and_param_coord(time_val=time_val, t_axis=t_axis)
 
                     # must be well inside
                     if time_index0 == nt - 1:
                         time_index0 = nt - 2
                         mu = 0.0
+                    
                     time_index1 = time_index0 + 1
 
                 # u: linear in x between i0 and i0+1 at the same (k0,j0)
