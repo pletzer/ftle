@@ -41,6 +41,7 @@ import numpy as np
 import netCDF4
 from vtkmodules.vtkCommonDataModel import vtkRectilinearGrid, vtkMultiBlockDataSet
 import vtk
+import time
 
 try:
     # paraview 6.x
@@ -291,6 +292,8 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
         # --------------------------------------------------------------
         with netCDF4.Dataset(self.palmfile, "r") as nc:
 
+            tm0 = time.perf_counter()
+
             if self.verbose:
                 print(f'self.imin={self.imin} self.imax={self.imax} self.jmin={self.jmin} self.jmax={self.jmax}')
 
@@ -355,6 +358,8 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
                 nc.variables['w_xy'][tmin:tmax, :, :, :], 
                 copy=False, nan=0.0)
 
+            tm1 = time.perf_counter()
+
             if self.verbose:
                 print(f'nx1={nx1} ny1={ny1} nz1={nz1}')
                 print(f'uface.shape={uface.shape}\nvface.shape={vface.shape}\nwface.shape={wface.shape}')
@@ -362,11 +367,16 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
             # total number of grid points
             n = len(xflat)
 
+            tminterp = 0.0
+
             def velocity_fun(time_val: float, pos: np.ndarray) -> np.ndarray:
                 """
                 Velocity interpolated at pos
                 pos: length 3*n vector [x..., y..., z...]
                 """
+                nonlocal tminterp
+                tminterp0 = time.perf_counter()
+
                 xi = pos[0:n]
                 yi = pos[n:2*n]
                 zi = pos[2*n:3*n]
@@ -431,13 +441,18 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
                 vi = um*v0 + mu*v1
                 wi = um*w0 + mu*w1
 
-                return np.concatenate([ui, vi, wi])          
+                tminterp1 = time.perf_counter()
+                tminterp += (tminterp1 - tminterp0)
+
+                return ui, vi, wi
 
             # integrate the trajectories. y is the state, a concatenated array of 
             # [x..., y..., z...] positions. xyz0 is the initial condition
             # Note: FTLE is computed from corner-seeded trajectories.
             xyz0 = np.concatenate([xflat, yflat, zflat]).astype(np.float64)
             nsteps = _estimate_nsteps(uface, vface, wface, dx, dy, dz.min(), self.tintegr)
+
+            tm2 = time.perf_counter()
 
             # Runge-Kutta 4
             xyz = xyz0.copy()
@@ -455,18 +470,18 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
 
                 time_val = time_base + step * delta_time
 
-                k1[:] = velocity_fun(time_val, xyz)
+                k1[0:n], k1[n:2*n], k1[2*n:3*n] = velocity_fun(time_val, xyz)
 
                 time_val += 0.5*delta_time
                 tmp[:] = xyz + 0.5 * delta_time * k1
-                k2[:] = velocity_fun(time_val, tmp)
+                k2[0:n], k2[n:2*n], k2[2*n:3*n] = velocity_fun(time_val, tmp)
 
                 tmp[:] = xyz + 0.5 * delta_time * k2
-                k3[:] = velocity_fun(time_val, tmp)
+                k3[0:n], k3[n:2*n], k3[2*n:3*n] = velocity_fun(time_val, tmp)
 
                 time_val += 0.5*delta_time
                 tmp[:] = xyz + delta_time * k3
-                k4[:] = velocity_fun(time_val, tmp)
+                k4[0:n], k4[n:2*n], k4[2*n:3*n] = velocity_fun(time_val, tmp)
 
                 xyz += (delta_time / 6.0) * (k1 + 2.0 * k2 + 2.0 * k3 + k4)
 
@@ -477,6 +492,8 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
                 xyz[0:n]   = np.clip(xyz[0:n],   xaxis_full[0], xaxis_full[-1])
                 xyz[n:2*n] = np.clip(xyz[n:2*n], yaxis_full[0], yaxis_full[-1])
                 xyz[2*n:]  = np.clip(xyz[2*n:],  zaxis[0], zaxis[-1])
+
+            tm3 = time.perf_counter()
 
             # reshape
             Xf = xyz[0:n].reshape((nz1, ny1, nx1))
@@ -500,7 +517,12 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
             C[..., 2, 1] = C[..., 1, 2]
             C[..., 2, 2] = f13*f13 + f23*f23 + f33*f33
             C_flat = C.reshape(-1, 3, 3)
+
+            tm4 = time.perf_counter()
+
             eigvals = np.linalg.eigvalsh(C_flat)
+
+            tm5 = time.perf_counter()
 
             # Note: the eigenvalues are cell centred (nz, ny, nx)
             max_lambda = np.maximum(eigvals[:, -1], 1.e-16).reshape((nz, ny, nx))
@@ -513,6 +535,14 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
 
             if self.checksum:
                 print(f'Checksum: {np.fabs(ftle).sum()}')
+
+            print(f"""
+time to read:     {tm1 - tm0:.3f} sec
+time for setup:   {tm2 - tm1:.3f} sec
+time RK4:         {tm3 - tm2:.3f} sec, interpolation: {tminterp:.3f} sec
+time deformation: {tm4 - tm3:.3f} sec
+time eigenvalue:  {tm5 - tm4:.3f} sec
+                  """)
         
             return dict(
                 x=xaxis, y=yaxis, z=zaxis, # axes
