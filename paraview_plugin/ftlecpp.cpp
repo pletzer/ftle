@@ -61,14 +61,27 @@ void interp_velocity(
         int time_index0, time_index1;
         double mu;
         if (frozen) {
-            time_index0 = 0; mu = 0.0; time_index1 = 0;
+            time_index0 = 0;
+            mu = 0.0;
+            time_index1 = 0;
         } else {
             size_t nt = t_axis.shape(0);
-            time_index0 = std::floor((time_val - t_r(0)) / (t_r(1) - t_r(0)));
-            time_index0 = std::clamp(time_index0, 0, int(nt - 2));
-            mu = (time_val - t_r(time_index0)) / (t_r(time_index0 + 1) - t_r(time_index0));
-            mu = std::clamp(mu, 0.0, 1.0);
+            double dt_uniform = t_r(1) - t_r(0);
+
+            // Compute raw fractional index
+            double idxf = (time_val - t_r(0)) / dt_uniform;
+
+            // Floor to get lower index
+            time_index0 = int(std::floor(idxf));
             time_index1 = time_index0 + 1;
+
+            // Clamp indices to [0, nt-2]
+            time_index0 = std::clamp(time_index0, 0, int(nt - 2));
+            time_index1 = std::clamp(time_index1, 1, int(nt - 1));
+
+            // Interpolation fraction
+            mu = idxf - time_index0;
+            mu = std::clamp(mu, 0.0, 1.0);
         }
 
         // interpolate u, v, w
@@ -91,7 +104,7 @@ void interp_velocity(
 // RK4 integration
 // -----------------------------------------------------------------------------
 py::array_t<double> integrate_rk4(
-    py::array_t<double>& xyz0,
+    const py::array_t<double>& xyz0,
     double t0,
     double dt, // per step
     int nsteps,
@@ -109,6 +122,10 @@ py::array_t<double> integrate_rk4(
     bool frozen,
     const py::array_t<double>& t_axis
 ) {
+
+    if (xyz0.ndim() != 1 || xyz0.shape(0) % 3 != 0)
+        throw std::runtime_error("xyz0 must be flat array of length 3*N");
+
     auto xyz_ptr0 = xyz0.unchecked<1>();
     size_t n = xyz_ptr0.shape(0) / 3;
 
