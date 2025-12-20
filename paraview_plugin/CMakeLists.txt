@@ -5,9 +5,9 @@ project(time_index LANGUAGES CXX)
 add_subdirectory(./pybind11 pybind11_build)
 
 # Build the module
-pybind11_add_module(time_index time_index.cpp)
+pybind11_add_module(ftlecpp ftlecpp.cpp)
 
-set_target_properties(time_index PROPERTIES
+set_target_properties(ftlecpp PROPERTIES
     PREFIX ""
     CXX_STANDARD 17
 )

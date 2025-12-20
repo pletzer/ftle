@@ -48,30 +48,13 @@ import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
 
 # C++ extensions
-import time_index
+import ftlecpp
 
 try:
     # paraview 6.x
     from vtkmodules.util import numpy_support
 except:
     from vtk.util import numpy_support
-
-def _XXXXget_lower_time_index_and_param_coord(time_val: float, t_axis: np.ndarray) -> tuple:
-    # --------------------------------------------------------------
-    # Get the time index and time interval parametric coordinate from the time value
-    # --------------------------------------------------------------
-
-    t_axis_min = np.min(t_axis)
-    dt = t_axis[1] - t_axis[0] # assume uniform
-    nt = t_axis.shape[0]
-
-    t_index = int(np.floor((time_val - t_axis_min) / dt))
-    t_index = np.clip(t_index, 0, nt - 2)
-
-    mu = (time_val - t_axis[t_index])/dt
-    mu = np.clip(mu, 0.0, 1.0)
-
-    return (t_index, mu)
 
 
 # -------------------------
@@ -330,9 +313,6 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
             if self.jmin < 0 or self.jmax >= yaxis_full.size:
                 raise ValueError("Invalid JRange")
 
-            xmin_full = xaxis_full[0]
-            ymin_full = yaxis_full[0]
-
             # assume uniform grid in x, y
             dx = xaxis[1] - xaxis[0]
             dy = yaxis[1] - yaxis[0]
@@ -374,86 +354,6 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
             # total number of grid points
             n = len(xflat)
 
-            tminterp = 0.0
-
-            def velocity_fun(time_val: float, pos: np.ndarray) -> np.ndarray:
-                """
-                Velocity interpolated at pos
-                pos: length 3*n vector [x..., y..., z...]
-                """
-                nonlocal tminterp
-                tminterp0 = time.perf_counter()
-
-                xi = pos[0:n]
-                yi = pos[n:2*n]
-                zi = pos[2*n:3*n]
-                # the velocities are interpolated on the full grid
-                ifloat = (xi - xmin_full) / dx
-                jfloat = (yi - ymin_full) / dy
-                # clamp (so particle leaving domain will be evaluated at boundary cell)
-                ifloat = np.clip(ifloat, 0.0, nx1_full - 1.0)
-                jfloat = np.clip(jfloat, 0.0, ny1_full - 1.0)
-                # make sure i0, j0 and k0 are on the low side
-                i0 = np.clip(np.floor(ifloat).astype(np.int64), 0, nx1_full - 2)
-                j0 = np.clip(np.floor(jfloat).astype(np.int64), 0, ny1_full - 2)
-                # z axis is not uniform
-                k0 = np.clip(np.searchsorted(zaxis, zi) - 1, 0, nz1 - 2)
-
-                # parametric coordinates of the cell: 0 <= xsi, eta, zet <= 1
-                xsi = ifloat - i0
-                eta = jfloat - j0
-                zet = (zi - zaxis[k0]) / (zaxis[k0 + 1] - zaxis[k0])
-
-                isx = 1.0 - xsi
-                ate = 1.0 - eta
-                tez = 1.0 - zet
-
-                # Arakawa C mimetic interpolation of vector field
-                # The interpolation is piecewise linear in the direction of the component 
-                # and piecewise constant in the other directions. This interpolation
-                # conserves fluxes and allows one to have obstacles in the domain (e.g 
-                # buildings)
-
-                if self.frozen:
-
-                    time_index0 = 0
-                    mu = 0.0
-                    time_index1 = 0
-
-                else:
-
-                    # let the velocity vary during trajectory integrations
-
-                    time_index0, mu = time_index.get_lower_time_index_and_param_coord(time_val=time_val, t_axis=t_axis)
-
-                    # must be well inside
-                    if time_index0 == nt - 1:
-                        time_index0 = nt - 2
-                        mu = 0.0
-                    
-                    time_index1 = time_index0 + 1
-
-                # u: linear in x between i0 and i0+1 at the same (k0,j0)
-                u0 = uface[time_index0, k0, j0, i0] * isx + uface[time_index0, k0, j0, i0 + 1] * xsi
-                u1 = uface[time_index1, k0, j0, i0] * isx + uface[time_index1, k0, j0, i0 + 1] * xsi
-                # vi: linear in y between j0 and j0+1 at same (k0,i0)
-                v0 = vface[time_index0, k0, j0, i0] * ate + vface[time_index0, k0, j0 + 1, i0] * eta
-                v1 = vface[time_index1, k0, j0, i0] * ate + vface[time_index1, k0, j0 + 1, i0] * eta
-                # wi: linear in z between k0 and k0+1 at same (j0,i0)
-                w0 = wface[time_index0, k0, j0, i0] * tez + wface[time_index0, k0 + 1, j0, i0] * zet
-                w1 = wface[time_index1, k0, j0, i0] * tez + wface[time_index1, k0 + 1, j0, i0] * zet
-
-                # now time interpolate
-                um = 1.0 - mu
-                ui = um*u0 + mu*u1
-                vi = um*v0 + mu*v1
-                wi = um*w0 + mu*w1
-
-                tminterp1 = time.perf_counter()
-                tminterp += (tminterp1 - tminterp0)
-
-                return ui, vi, wi
-
             # integrate the trajectories. y is the state, a concatenated array of 
             # [x..., y..., z...] positions. xyz0 is the initial condition
             # Note: FTLE is computed from corner-seeded trajectories.
@@ -462,44 +362,38 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
 
             tm2 = time.perf_counter()
 
+            # make sure the masked arrays are converted to plain ndarrays
+            xyz0_clean = np.array(xyz0, dtype=np.float64)
+            uface_clean = np.array(uface, dtype=np.float64)
+            vface_clean = np.array(vface, dtype=np.float64)
+            wface_clean = np.array(wface, dtype=np.float64)
+            xaxis_clean = np.array(xaxis_full, dtype=np.float64)
+            yaxis_clean = np.array(yaxis_full, dtype=np.float64)
+            zaxis_clean = np.array(zaxis, dtype=np.float64)
+            t_axis_clean = np.array(t_axis, dtype=np.float64)
+
             # Runge-Kutta 4
-            xyz = xyz0.copy()
-            k1 = np.empty_like(xyz)
-            k2 = np.empty_like(xyz)
-            k3 = np.empty_like(xyz)
-            k4 = np.empty_like(xyz)
-            tmp = np.empty_like(xyz)
-
-            local_index = self.time_index - tmin
-            time_base = t_axis[local_index]
-            delta_time = self.tintegr / nsteps
-
-            for step in range(nsteps):
-
-                time_val = time_base + step * delta_time
-
-                k1[0:n], k1[n:2*n], k1[2*n:3*n] = velocity_fun(time_val, xyz)
-
-                time_val += 0.5*delta_time
-                tmp[:] = xyz + 0.5 * delta_time * k1
-                k2[0:n], k2[n:2*n], k2[2*n:3*n] = velocity_fun(time_val, tmp)
-
-                tmp[:] = xyz + 0.5 * delta_time * k2
-                k3[0:n], k3[n:2*n], k3[2*n:3*n] = velocity_fun(time_val, tmp)
-
-                time_val += 0.5*delta_time
-                tmp[:] = xyz + delta_time * k3
-                k4[0:n], k4[n:2*n], k4[2*n:3*n] = velocity_fun(time_val, tmp)
-
-                xyz += (delta_time / 6.0) * (k1 + 2.0 * k2 + 2.0 * k3 + k4)
-
-                # Make sure the trajectories are not leaving the domain
-                # Another possibility would be to have a larger domain for
-                # the vector field interpolation. So imin:imax and jmin:jmax 
-                # would only be used for seeding the trajectories
-                xyz[0:n]   = np.clip(xyz[0:n],   xaxis_full[0], xaxis_full[-1])
-                xyz[n:2*n] = np.clip(xyz[n:2*n], yaxis_full[0], yaxis_full[-1])
-                xyz[2*n:]  = np.clip(xyz[2*n:],  zaxis[0], zaxis[-1])
+            time_val = t_axis_clean[0]  # start of selected window
+            dt_step = self.tintegr / nsteps
+            xyz = ftlecpp.integrate_rk4(
+                xyz0_clean,
+                time_val,
+                dt_step,
+                nsteps,
+                uface_clean,
+                vface_clean,
+                wface_clean,
+                xaxis_clean,
+                yaxis_clean,
+                zaxis_clean,
+                dx,
+                dy,
+                nx1_full,
+                ny1_full,
+                nz1,
+                self.frozen,
+                t_axis_clean
+            )
 
             tm3 = time.perf_counter()
 
@@ -547,7 +441,7 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
             print(f"""
 time to read:     {tm1 - tm0:.3f} sec
 time for setup:   {tm2 - tm1:.3f} sec
-time RK4:         {tm3 - tm2:.3f} sec, interpolation: {tminterp:.3f} sec
+time RK4:         {tm3 - tm2:.3f} sec
 time deformation: {tm4 - tm3:.3f} sec
 time eigenvalue:  {tm5 - tm4:.3f} sec
                   """)
