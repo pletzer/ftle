@@ -354,8 +354,8 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
             # total number of grid points
             n = len(xflat)
 
-            # integrate the trajectories. y is the state, a concatenated array of 
-            # [x..., y..., z...] positions. xyz0 is the initial condition
+            # integrate the trajectories. xyz0, the initial position, is a concatenated array of 
+            # [x..., y..., z...] positions.
             # Note: FTLE is computed from corner-seeded trajectories.
             xyz0 = np.concatenate([xflat, yflat, zflat]).astype(np.float64)
             nsteps = _estimate_nsteps(uface, vface, wface, dx, dy, dz.min(), self.tintegr)
