@@ -8,6 +8,13 @@ add_subdirectory(./pybind11 pybind11_build)
 pybind11_add_module(ftlecpp ftlecpp.cpp)
 
 find_package(OpenMP REQUIRED)
+find_package(OpenMP REQUIRED)
+if(APPLE)
+    target_compile_options(ftlecpp PRIVATE -Xpreprocessor -fopenmp)
+    target_link_libraries(ftlecpp PRIVATE /opt/homebrew/opt/libomp/lib/libomp.dylib)
+else()
+    target_link_libraries(ftlecpp PRIVATE OpenMP::OpenMP_CXX)
+endif()
 
 set_target_properties(ftlecpp PROPERTIES
     PREFIX ""
