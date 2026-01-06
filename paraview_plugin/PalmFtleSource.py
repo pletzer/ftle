@@ -182,10 +182,8 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
         """
         Set the i-index range as a 2-element integer array [imin, imax].
         """
-        print(f'SetIRange: getting {imin} {imax}')
         self.imin = int(imin)
         self.imax = int(imax)
-        print(f'imin = {self.imin} imax = {self.imax}')
         self.Modified()
 
     @smproperty.intvector(
@@ -197,10 +195,8 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
         """
         Set the j-index range as a 2-element integer array [jmin, jmax].
         """
-        print(f'SetJRange: getting {jmin} {jmax}')
         self.jmin = int(jmin)
         self.jmax = int(jmax)
-        print(f'jmin = {self.jmin} jmax = {self.jmax}')
         self.Modified()
 
 
