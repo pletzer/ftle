@@ -173,25 +173,34 @@ class PalmFtleSource(VTKPythonAlgorithmBase):
         self.frozen = bool(value)
         self.Modified()
 
-
-    @smproperty.intvector(name="IMin", number_of_elements=1, default_values=[180])
-    def SetIMin(self, value, *args):
-        self.imin = int(value)
+    @smproperty.intvector(
+        name="IRange",
+        number_of_elements=2,
+        default_values=[180, 320]
+    )
+    def SetIRange(self, imin, imax):
+        """
+        Set the i-index range as a 2-element integer array [imin, imax].
+        """
+        print(f'SetIRange: getting {imin} {imax}')
+        self.imin = int(imin)
+        self.imax = int(imax)
+        print(f'imin = {self.imin} imax = {self.imax}')
         self.Modified()
 
-    @smproperty.intvector(name="IMax", number_of_elements=1, default_values=[320])
-    def SetIMax(self, value, *args):
-        self.imax = int(value)
-        self.Modified()
-
-    @smproperty.intvector(name="JMin", number_of_elements=1, default_values=[180])
-    def SetJMin(self, value, *args):
-        self.jmin = int(value)
-        self.Modified()
-
-    @smproperty.intvector(name="JMax", number_of_elements=1, default_values=[260])
-    def SetJMax(self, value, *args):
-        self.jmax = int(value)
+    @smproperty.intvector(
+        name="JRange",
+        number_of_elements=2,
+        default_values=[180, 260]
+    )
+    def SetJRange(self, jmin, jmax):
+        """
+        Set the j-index range as a 2-element integer array [jmin, jmax].
+        """
+        print(f'SetJRange: getting {jmin} {jmax}')
+        self.jmin = int(jmin)
+        self.jmax = int(jmax)
+        print(f'jmin = {self.jmin} jmax = {self.jmax}')
         self.Modified()
 
 
