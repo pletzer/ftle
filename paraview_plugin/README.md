@@ -1,10 +1,15 @@
-# Loading the Paraview plugin
+# Loading the Paraview PalFtelSource plugin
 
-This directory contains plugins that can be loaded into Paraview.
+This directory contains a Paraview plugin  `PalmFtleSource.py`, which computes the finite time Lyapunov exponent for a velocity field on a Arakawa C-grid.
+
+A plugin is a software that can be loaded "live" into another software (Paraview), without the need to 
+recompile the host software. 
 
 ## Building the plugin
 
-Plugins call C++ code that must first be compiled. You must have a C++ compiler and CMake installed, in addition to Paraview. The steps were tested on Mac OS X with Paraview 6.0.1.
+The Python plugin calls C++ code that must first be compiled. You must have a C++ compiler, the CMake build tool and the Python `pybind11` module installed (in addition to Paraview). 
+
+The steps to build the plugin were tested on Mac OS X with Paraview 6.0.1.
 
 ### On MAC OS X
 
@@ -22,19 +27,22 @@ cmake \
 make
 ```
 Now you should have a shared library `ftlecpp.cpython-312-darwin.so` (the name will change depending on 
-platform). Copy this file to the `paraview_plugin` directory.
+platform). Copy this file to the `paraview_plugin` directory, i.e. next to `PalmFtleSource.py` file.
 ```bash
 cp ftlecpp.cpython-312-darwin.so ..
 ```
 
 ### On Linux
 
-TO WRITE
+The steps should be similar to Mac OS X. Besure to set `PYTHON_EXECUTABLE` and use the same compiler used to build Paraview, if possible. 
 
-## How to load a plugin
 
-Start Parview. Under `Tools` -> `Manage plugins...`, then press `Load New`, navigate to the directory where your plugin resides. Select the plugin (PalmFtleSource) and press `OK`.  
-Wait a few seconds, giving Paraview the time to load the plugin. Close the `Plugin Manager` window.
+## How to load the plugin
+
+Start Paraview. Under `Tools` -> `Manage plugins...`, then press `Load New`, navigate to the directory where `PalmFtleSource.py` resides. Click on `PalmFtleSource.py` and press `OK`.  
+Wait for a few seconds, giving Paraview the time to load the plugin. 
+Then close the `Plugin Manager` window. (It is critical to close the window otherwise the plugin will not be
+loaded.)
 
 ## How to invoke the plugin
 
@@ -43,4 +51,31 @@ For the `PALM FTLE Source` plugin, go to `Sources` and select `PALM FTLE Source`
 ## Volume rendering
 
 The FTLE field is cell centred and therefore selecting `Volume` will not work. Additionally, volume rendering requires image data (i.e. uniform grid data) whereas the data are stored on a rectilinear grid. However, you can add a `Cell to Point Data` connecting to a `Resample to Image` filter, then use `Volume` to see the interior.  
+
+## Using multiple threads
+
+The computation of FTLE is compute intensive. Running with multiple OpenMP threads can reduce the execution time. 
+
+To run on multiple threads, 
+```
+export OMP_NUM_THREADS=4
+```
+(or set to any number of threads), prior to launching Paraview:
+```bash
+paraview &
+```
+
+The table below shows the effect of `OMP_NUM_THREADS` for `i=100:400`, `j=100:400` and an integration time of -10 on a MacBook Air laptop (M4). The maximum speedup is 2.7.
+
+| OMP_NUM_THREADS    | Time RK4 sec |
+| -------------------| ------------ |
+| 1                  |   67.5       |
+| 2                  |   40.5       |
+| 4                  |   28.2       |
+| 5                  |   27.5       | 
+| 6                  |   24.9       |
+
+
+
+
 
